@@ -4,7 +4,33 @@
 
 This document describes the **design analysis and architectural decisions** for a **User Management Service** intended as a **Proof of Concept (POC)** for a large-scale enterprise application.
 
-The goal of this POC is to demonstrate **scalability thinking, security-first design, and clean service boundaries**, rather than delivering a production-ready IAM solution.
+The goal of this POC is to demonstrate **scalability thinking, security-first design, and clean service boundaries**, while keeping implementation complexity appropriate for a POC.
+
+### Design Philosophy
+
+This POC adopts a **Cognito-only approach** for user data storage, leveraging AWS managed services to minimize custom infrastructure while maintaining clean service abstractions.
+
+---
+
+## Table of Contents
+
+1. [Purpose & Scope](#1-purpose--scope)
+2. [Consumers & Boundaries](#2-consumers--boundaries)
+3. [User Model & Identity](#3-user-model--identity)
+4. [Authentication Strategy](#4-authentication-strategy)
+5. [Authorization Model](#5-authorization-model)
+6. [User Lifecycle Management](#6-user-lifecycle-management)
+7. [Service-to-Service Authentication](#7-service-to-service-authentication)
+8. [API Design](#8-api-design)
+9. [Rate Limiting](#9-rate-limiting)
+10. [Error Handling](#10-error-handling)
+11. [Scale & Non-Functional Expectations](#11-scale--non-functional-expectations)
+12. [Security & Compliance](#12-security--compliance)
+13. [Observability](#13-observability)
+14. [Technology Stack](#14-technology-stack)
+15. [POC Success Criteria](#15-poc-success-criteria)
+16. [Future Considerations](#16-future-considerations)
+17. [Appendices](#appendices)
 
 ---
 
@@ -14,23 +40,25 @@ The goal of this POC is to demonstrate **scalability thinking, security-first de
 
 The service is responsible for:
 
-* User authentication
-* Authorization
-* User lifecycle management
+- User authentication
+- Authorization
+- User lifecycle management
 
 ### Scope
 
-* Application-specific user management
-* Single-tenant system
-* Internal-facing service consumed by other microservices
+- Application-specific user management
+- Single-tenant system
+- Internal-facing service consumed by other microservices
 
 ### Out of Scope (for POC)
 
-* Cross-tenant access
-* External consumers
-* Advanced compliance workflows
-* Full audit pipelines
-* Graceful degradation patterns
+- Cross-tenant access
+- External consumers
+- Advanced compliance workflows
+- Full audit pipelines
+- Graceful degradation patterns
+- Soft delete / user recovery
+- Custom user state tracking
 
 ---
 
@@ -38,37 +66,37 @@ The service is responsible for:
 
 ### Consumers
 
-* Internal microservices only
+- Internal microservices only
 
 ### Responsibility Boundaries
 
-* Authentication and identity are delegated to managed services
-* Authorization decisions are centralized
-* Downstream services remain **authorization-agnostic**
-
-This enforces a **clear separation of concerns**:
-
 | Concern | Owner |
 |---------|-------|
-| Identity & trust | Amazon Cognito |
+| Identity, credentials & user data | Amazon Cognito |
 | Business authorization | Amazon Verified Permissions |
-| User lifecycle & orchestration | User Management Service |
+| Orchestration & abstraction | User Management Service |
 
 ### Service Abstraction
 
 All Cognito and AVP interactions are **abstracted behind the User Management Service interface**. Downstream services:
 
-* Do not call Cognito directly
-* Do not call AVP directly
-* Interact only with User Management Service APIs
+- Do not call Cognito directly
+- Do not call AVP directly
+- Interact only with User Management Service APIs
 
 ```
 ┌─────────────────┐      ┌─────────────────────────────────────────┐
 │ Order Service   │─────▶│        User Management Service          │
-│ Report Service  │      │  ┌─────────────┐  ┌──────────────────┐  │
-│ Admin Service   │      │  │   Cognito   │  │       AVP        │  │
-└─────────────────┘      │  │  (wrapped)  │  │    (wrapped)     │  │
+│ Report Service  │      │                                         │
+│ Admin Service   │      │  ┌─────────────┐  ┌──────────────────┐  │
+└─────────────────┘      │  │   Cognito   │  │       AVP        │  │
+                         │  │ (users/auth)│  │ (authorization)  │  │
                          │  └─────────────┘  └──────────────────┘  │
+                         │                                         │
+                         │  ┌─────────────┐                        │
+                         │  │    Redis    │                        │
+                         │  │  (caching)  │                        │
+                         │  └─────────────┘                        │
                          └─────────────────────────────────────────┘
 ```
 
@@ -85,9 +113,9 @@ All Cognito and AVP interactions are **abstracted behind the User Management Ser
 
 ### Identity Uniqueness
 
-* Users are uniquely identified by **email**
-* Email uniqueness is enforced globally (single-tenant)
-* **Email is immutable** — changing email creates a new user
+- Users are uniquely identified by **email**
+- Email uniqueness is enforced by Cognito
+- **Email is immutable** — changing email creates a new user
 
 ### User Creation Flow
 
@@ -98,37 +126,41 @@ All Cognito and AVP interactions are **abstracted behind the User Management Ser
 
 ### Verification Mechanism
 
-* **Method:** Email OTP
-* **OTP Expiry:** 15 minutes
-* **Max Attempts:** 3 per OTP
+| Configuration | Value |
+|---------------|-------|
+| Method | Email OTP |
+| OTP Expiry | 15 minutes (Cognito default) |
+| Max Attempts | Managed by Cognito |
 
-### Profile Data Distribution
+### User Data Storage
 
-| Attribute | User Management Service | Cognito |
-|-----------|-------------------------|---------|
-| User ID | ✓ | ✓ (sub) |
-| Email | ✓ | ✓ |
-| User State | ✓ | — |
-| Profile attributes | ✓ | — |
-| Password | — | ✓ |
-| MFA configuration | — | ✓ |
-| MFA secrets | — | ✓ |
+**All user data is stored in Cognito:**
 
-**Sync Strategy:** User Management Service is the source of truth for user state and profile. Cognito is the source of truth for credentials and MFA.
+| Attribute | Cognito Attribute | Mutable |
+|-----------|-------------------|---------|
+| User ID | `sub` (auto-generated) | No |
+| Email | `email` | No |
+| First Name | `given_name` | Yes |
+| Last Name | `family_name` | Yes |
+| Phone | `phone_number` | Yes |
+| User Type | `custom:user_type` | No |
+| Account Status | `Enabled/Disabled` | Yes (Admin) |
+| Email Verified | `email_verified` | Yes |
+| MFA Enabled | MFA settings | Yes |
+| Created At | `UserCreateDate` | No |
+| Updated At | `UserLastModifiedDate` | No |
 
-### Tenancy
+### No Custom Database
 
-* Single-tenant system
-* Tenant context is implicit, not modeled explicitly
-* Design remains tenant-aware for future extensibility
+This POC intentionally **does not use DynamoDB or any custom database** for user data:
 
-**Future-Proofing for Multi-Tenancy:**
-
-| Design Choice | Purpose |
-|---------------|---------|
-| `tenant_id` field in DynamoDB schema (nullable) | Easy to enable per-tenant queries |
-| Tenant context in service layer | Abstracted for future injection |
-| Separate partition key strategy | Supports tenant isolation |
+| Trade-off | Accepted Limitation |
+|-----------|---------------------|
+| Custom states | Use Cognito's enabled/disabled only |
+| Soft delete | Users are permanently deleted |
+| State change tracking | No audit of who changed what |
+| Rich queries | Limited to Cognito's capabilities |
+| Restore deleted users | Not possible |
 
 ---
 
@@ -136,18 +168,20 @@ All Cognito and AVP interactions are **abstracted behind the User Management Ser
 
 ### Authentication Model
 
-* Username (email) & password
-* Multi-factor authentication (TOTP app-based)
+- Username (email) & password
+- Multi-factor authentication (TOTP app-based)
 
 ### Identity Provider
 
-* Delegated to **Amazon Cognito**
-* **Separate user pools** for End Users and Admin Users
-* Cognito is responsible for:
-  * Credential storage
-  * MFA enforcement
-  * Token issuance
-  * Password policies
+- Delegated to **Amazon Cognito**
+- **Separate user pools** for End Users and Admin Users
+- Cognito handles:
+  - Credential storage
+  - MFA enforcement
+  - Token issuance
+  - Password policies
+  - Email verification
+  - Account status
 
 ### Token Lifecycle
 
@@ -158,32 +192,33 @@ All Cognito and AVP interactions are **abstracted behind the User Management Ser
 | Refresh Token | 7 days | Obtain new access tokens |
 
 **Refresh Strategy:**
-* Client refreshes access token before expiry
-* Refresh tokens are rotated on use
-* Refresh token reuse detected and rejected
+
+- Client refreshes access token before expiry
+- Refresh tokens are rotated on use
+- Refresh token reuse detected and rejected
 
 ### JWT Claims Strategy
 
-**Approach:** Minimal claims in token
+**Approach:** Minimal claims (Cognito defaults + user_type)
 
-| Claim | Included | Rationale |
-|-------|----------|-----------|
-| `sub` | ✓ | User identifier |
-| `email` | ✓ | User email |
-| `token_use` | ✓ | Token type (access/id) |
-| `user_type` | ✓ | end_user / admin |
-| User state | ✗ | Checked per request for immediate revocation |
-| Permissions | ✗ | Managed by AVP, not embedded |
+| Claim | Source | Description |
+|-------|--------|-------------|
+| `sub` | Cognito | User identifier (UUID) |
+| `email` | Cognito | User email |
+| `email_verified` | Cognito | Email verification status |
+| `token_use` | Cognito | Token type (access/id) |
+| `custom:user_type` | Cognito | `end_user` or `admin` |
+| `cognito:groups` | Cognito | User groups (optional) |
 
 ### Session Strategy
 
-* Stateless authentication using JWTs
-* Tokens are validated by User Management Service
-* No server-side session storage
+- Stateless authentication using JWTs
+- Tokens validated by User Management Service
+- No server-side session storage
 
 ### Immediate Revocation Strategy
 
-Since JWTs are stateless, immediate revocation for suspended/deactivated users is handled via:
+For disabled users, revocation is handled via:
 
 ```
 Every Authenticated Request:
@@ -196,19 +231,20 @@ Every Authenticated Request:
     │
     ▼
 ┌─────────────────────────┐
-│ 2. Check User State     │ ← From cache (30s TTL) or DB
-│    (stateful check)     │
+│ 2. Check User Status    │ ← From cache (30s TTL) or Cognito
+│    (Cognito lookup)     │
 └─────────────────────────┘
     │
-    ├── State = Active → Proceed
+    ├── Enabled = true  → Proceed
     │
-    └── State = Suspended/Deactivated → 403 Forbidden
+    └── Enabled = false → 403 Forbidden
 ```
 
 **Implementation:**
-* User state cached in Redis (30-second TTL)
-* State change immediately invalidates cache
-* Every request validates current state
+
+- User enabled status cached in Redis (30-second TTL)
+- Disabling user immediately invalidates cache entry
+- Every request validates user is still enabled
 
 ---
 
@@ -216,31 +252,30 @@ Every Authenticated Request:
 
 ### Authorization Style
 
-* **ABAC-first model**
-* Authorization decisions are made using:
-  * User attributes
-  * Resource attributes
-  * Action context
+- **ABAC-first model**
+- Authorization decisions are made using:
+  - User attributes (from Cognito)
+  - Resource attributes
+  - Action context
 
 ### Policy Engine
 
-* **Amazon Verified Permissions (AVP)**
-* Cedar policies evaluate:
-  * Principal
-  * Action
-  * Resource
-  * Context
+- **Amazon Verified Permissions (AVP)**
+- Cedar policies evaluate:
+  - Principal (user)
+  - Action
+  - Resource
+  - Context
 
 ### Core Resources & Actions
 
 | Resource | Actions | Description |
 |----------|---------|-------------|
 | `User` | `create`, `read`, `update`, `delete`, `list` | User CRUD operations |
-| `User` | `suspend`, `activate`, `deactivate` | State management |
-| `User` | `reset-password`, `update-mfa` | Credential management |
+| `User` | `disable`, `enable` | Account status management |
+| `User` | `reset-password` | Password management |
 | `AdminUser` | `create`, `read`, `update`, `delete`, `list` | Admin user management |
-| `Policy` | `read`, `list` | Policy viewing (management via AVP console) |
-| `AuditLog` | `read`, `list` | Audit log access |
+| `Policy` | `read`, `list` | Policy viewing |
 
 ### Action Matrix by User Type
 
@@ -249,7 +284,8 @@ Every Authenticated Request:
 | `User:read` | ✓ | ✗ | ✓ |
 | `User:update` | ✓ (limited) | ✗ | ✓ |
 | `User:delete` | ✗ | ✗ | ✓ |
-| `User:suspend` | ✗ | ✗ | ✓ |
+| `User:disable` | ✗ | ✗ | ✓ |
+| `User:enable` | ✗ | ✗ | ✓ |
 | `User:list` | ✗ | ✗ | ✓ |
 | `AdminUser:*` | ✗ | ✗ | ✓ |
 
@@ -267,178 +303,98 @@ Every Authenticated Request:
 
 | Event | Invalidation Scope |
 |-------|-------------------|
-| User state change | All entries for user |
+| User disabled/enabled | All entries for user |
 | User attribute change | All entries for user |
 | Policy update | Full cache flush |
-
-```python
-# Invalidation on user state change
-def on_user_state_change(user_id: str, new_state: str):
-    cache.delete_pattern(f"authz:{user_id}:*")
-    cache.set(f"user_state:{user_id}", new_state, ttl=30)
-```
 
 ### Failure Mode
 
 **Policy:** Fail-Closed
 
 If AVP is unavailable:
-* Authorization requests return **denied**
-* Cached decisions (within TTL) may be used
-* Error logged with high severity
-* Alert triggered
 
-```python
-def check_authorization(user_id, action, resource):
-    try:
-        # Try cache first
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
-        
-        # Call AVP
-        decision = avp_client.is_authorized(...)
-        cache.set(cache_key, decision, ttl=60)
-        return decision
-        
-    except AVPUnavailableError:
-        # Fail closed - deny access
-        logger.error("authz.avp.unavailable", user_id=user_id, action=action)
-        return False
-```
+- Authorization requests return **denied**
+- Cached decisions (within TTL) may be used
+- Error logged with high severity
+- Alert triggered
 
 ---
 
 ## 6. User Lifecycle Management
 
-### User States
+### User States (Cognito-Based)
 
-| State | Description | Can Authenticate | Can Be Authorized |
-|-------|-------------|------------------|-------------------|
-| `Created` | Record exists, pending verification | No | No |
-| `Unverified` | Awaiting email OTP verification | No | No |
-| `PasswordResetRequired` | Must reset password on next login | Limited | No |
-| `Active` | Fully enabled | Yes | Yes |
-| `Suspended` | Temporarily blocked | No | No |
-| `Deactivated` | Permanently disabled | No | No |
-| `Deleted` | Soft-deleted, recoverable | No | No |
+| State | Cognito Status | Description |
+|-------|----------------|-------------|
+| `UNCONFIRMED` | User created, not verified | Awaiting email verification |
+| `CONFIRMED` | Email verified | User confirmed but may need password change |
+| `FORCE_CHANGE_PASSWORD` | Admin-created user | Must change temporary password |
+| `ENABLED` | Account active | Can authenticate |
+| `DISABLED` | Account disabled | Cannot authenticate |
+| `DELETED` | User deleted | Permanently removed |
 
-### State Machine
+### Simplified State Model
+
+For API responses, we abstract Cognito states:
+
+| API State | Cognito States | Can Authenticate |
+|-----------|----------------|------------------|
+| `Unverified` | `UNCONFIRMED` | No |
+| `PasswordChangeRequired` | `FORCE_CHANGE_PASSWORD` | Limited |
+| `Active` | `CONFIRMED` + `Enabled=true` | Yes |
+| `Disabled` | `Enabled=false` | No |
+
+### State Transitions
 
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │                                              │
-                    ▼                                              │
-┌─────────┐    ┌────────────┐    ┌─────────┐    ┌─────────────┐   │
-│ Created │───▶│ Unverified │───▶│ Active  │───▶│ Deactivated │───┘
-└─────────┘    └────────────┘    └─────────┘    └─────────────┘
-                                      │ ▲             │
-                                      │ │             │
-                                      ▼ │             │
-                                 ┌───────────┐        │
-                                 │ Suspended │        │
-                                 └───────────┘        │
-                                      │               │
-                                      ▼               ▼
-                                 ┌─────────────────────┐
-                                 │      Deleted        │
-                                 └─────────────────────┘
+┌─────────────┐     verify      ┌─────────┐
+│ Unverified  │────────────────▶│ Active  │
+└─────────────┘                 └─────────┘
+                                    │  ▲
+                              disable│  │enable
+                                    ▼  │
+                                ┌─────────┐
+                                │Disabled │
+                                └─────────┘
+                                    │
+                                    │ delete
+                                    ▼
+                                ┌─────────┐
+                                │ Deleted │ (permanent)
+                                └─────────┘
 ```
 
 ### Valid State Transitions
 
-| From State | To State | Trigger | Side Effects |
-|------------|----------|---------|--------------|
-| `Created` | `Unverified` | Registration initiated | OTP sent |
-| `Unverified` | `Active` | OTP verified | — |
-| `Unverified` | `Deleted` | Admin action / Expiry | — |
-| `Active` | `Suspended` | Admin action | Cache invalidated, sessions revoked |
-| `Active` | `Deactivated` | Admin action | Cache invalidated, sessions revoked |
-| `Active` | `PasswordResetRequired` | Admin/security trigger | — |
-| `Active` | `Deleted` | Admin action | Cache invalidated |
-| `Suspended` | `Active` | Admin action (reactivate) | — |
-| `Suspended` | `Deactivated` | Admin action | — |
-| `Suspended` | `Deleted` | Admin action | — |
-| `Deactivated` | `Active` | Admin action (reactivate) | — |
-| `Deactivated` | `Deleted` | Admin action | — |
-| `PasswordResetRequired` | `Active` | Password reset completed | — |
-| `Deleted` | `Active` | Admin action (restore) | Within retention period |
+| From | To | Action | Who Can Perform |
+|------|----|--------|-----------------|
+| `Unverified` | `Active` | Email verification | User |
+| `PasswordChangeRequired` | `Active` | Password change | User |
+| `Active` | `Disabled` | Disable account | Admin |
+| `Disabled` | `Active` | Enable account | Admin |
+| `Active` | `Deleted` | Delete user | Admin |
+| `Disabled` | `Deleted` | Delete user | Admin |
 
 ### Lifecycle Triggers
 
-* **API Only** — No time-based or event-based automatic transitions
-* All state changes require explicit API calls
-* Admin authorization required for most transitions
+- **API Only** — No time-based automatic transitions
+- All state changes require explicit API calls
+- Admin authorization required for disable/enable/delete
 
-### De-Provisioning Behavior
+### Deletion Behavior
 
-| Action | Effect |
-|--------|--------|
-| Suspend | Immediate access revocation, cache invalidation |
-| Deactivate | Immediate access revocation, cache invalidation |
-| Delete (Soft) | Logical removal, data retained indefinitely |
+| Aspect | Behavior |
+|--------|----------|
+| Delete type | **Hard delete** (permanent) |
+| Data retention | None (user data removed from Cognito) |
+| Recovery | **Not possible** |
+| Tokens | Immediately invalid |
 
-**Soft Delete Policy:**
-* No eventual hard deletion
-* Data retained for audit and recovery purposes
-* Deleted users can be restored by admin
+> ⚠️ **POC Limitation:** Deleted users cannot be recovered. For production, consider adding DynamoDB for soft delete capability.
 
 ---
 
-## 7. Data & Persistence
-
-### Database
-
-**Choice:** Amazon DynamoDB
-
-**Rationale:**
-* Read-heavy workload alignment
-* Serverless scaling
-* Single-digit millisecond latency
-* AWS-native integration
-
-### Data Model
-
-**Users Table:**
-
-| Attribute | Type | Key | Description |
-|-----------|------|-----|-------------|
-| `PK` | String | Partition Key | `USER#<user_id>` |
-| `SK` | String | Sort Key | `PROFILE` |
-| `user_id` | String | — | UUID |
-| `email` | String | GSI-PK | Unique email |
-| `user_type` | String | — | `end_user` / `admin` |
-| `state` | String | GSI | User state |
-| `cognito_sub` | String | — | Cognito user sub |
-| `created_at` | String | — | ISO timestamp |
-| `updated_at` | String | — | ISO timestamp |
-| `created_by` | String | — | Creator user ID |
-| `state_changed_at` | String | — | Last state change |
-| `state_changed_by` | String | — | Who changed state |
-| `tenant_id` | String | — | Future: tenant isolation |
-
-**Global Secondary Indexes:**
-
-| GSI Name | Partition Key | Sort Key | Purpose |
-|----------|---------------|----------|---------|
-| `GSI-Email` | `email` | — | Lookup by email |
-| `GSI-State` | `state` | `created_at` | List users by state |
-| `GSI-Tenant` | `tenant_id` | `created_at` | Future: tenant queries |
-
-### Read/Write Patterns
-
-| Pattern | Frequency | Optimization |
-|---------|-----------|--------------|
-| Authorization check | Very High | Redis cache (60s TTL) |
-| User state lookup | High | Redis cache (30s TTL) |
-| User profile read | Medium | DynamoDB direct |
-| User profile update | Low | DynamoDB direct |
-| User creation | Low | DynamoDB direct |
-| User listing | Low | DynamoDB GSI with pagination |
-
----
-
-## 8. Service-to-Service Authentication
+## 7. Service-to-Service Authentication
 
 ### Approach
 
@@ -449,8 +405,8 @@ def check_authorization(user_id, action, resource):
 │ Order Service          │         │  User Management        │
 │ (ECS Task)             │────────▶│  Service (API Gateway)  │
 │                        │         │                         │
-│ IAM Role:              │         │  IAM Policy:            │
-│ order-service-role     │         │  Allow order-service    │
+│ IAM Role:              │         │  IAM Auth:              │
+│ order-service-role     │         │  Verify IAM signature   │
 └────────────────────────┘         └─────────────────────────┘
 ```
 
@@ -460,185 +416,53 @@ def check_authorization(user_id, action, resource):
 |---------|----------|-----------------|
 | Order Service | `order-service-role` | `User:read`, authorization checks |
 | Notification Service | `notification-service-role` | `User:read` |
-| Admin Dashboard | `admin-dashboard-role` | All `User:*` and `AdminUser:*` actions |
-
-### Request Flow
-
-```python
-# Downstream service calling User Management
-import boto3
-from aws_requests_auth.boto_utils import BotoAWSRequestsAuth
-
-auth = BotoAWSRequestsAuth(
-    aws_host="api.usermanagement.internal",
-    aws_region="us-east-1",
-    aws_service="execute-api"
-)
-
-response = requests.post(
-    "https://api.usermanagement.internal/v1/authorize",
-    json={"user_id": "user-123", "action": "orders:create", "resource": "..."},
-    auth=auth
-)
-```
+| Admin Dashboard | `admin-dashboard-role` | All `User:*` and `AdminUser:*` |
 
 ---
 
-## 9. API Design
+## 8. API Design
 
-### API Style
+**REST API** with URL path versioning (`/v1/...`) providing authentication, authorization, and user management endpoints.
 
-* **REST**
-* **Versioning:** URL path versioning (`/v1/...`)
+**Key endpoints:**
+- Authentication: `/auth/register`, `/auth/login`, `/auth/mfa/verify`
+- Authorization: `/authorize`, `/authorize/batch` (IAM-authenticated)
+- User Management: `/users` (CRUD operations, admin-only)
+- Self-Service: `/me` (profile management)
 
-### Endpoints
-
-#### Authentication
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/v1/auth/register` | Self-registration |
-| `POST` | `/v1/auth/verify-email` | Verify email OTP |
-| `POST` | `/v1/auth/login` | User login |
-| `POST` | `/v1/auth/mfa/verify` | Verify MFA code |
-| `POST` | `/v1/auth/token/refresh` | Refresh access token |
-| `POST` | `/v1/auth/logout` | Logout (revoke refresh token) |
-| `POST` | `/v1/auth/password/forgot` | Initiate password reset |
-| `POST` | `/v1/auth/password/reset` | Complete password reset |
-
-#### Authorization
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/v1/authorize` | Check authorization |
-| `POST` | `/v1/authorize/batch` | Batch authorization check |
-
-#### User Management
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/v1/users` | Create user (admin) |
-| `GET` | `/v1/users` | List users (admin) |
-| `GET` | `/v1/users/{id}` | Get user |
-| `PUT` | `/v1/users/{id}` | Update user |
-| `DELETE` | `/v1/users/{id}` | Soft delete user |
-| `POST` | `/v1/users/{id}/suspend` | Suspend user |
-| `POST` | `/v1/users/{id}/activate` | Activate user |
-| `POST` | `/v1/users/{id}/deactivate` | Deactivate user |
-| `POST` | `/v1/users/{id}/restore` | Restore deleted user |
-
-#### Profile (Self-Service)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/v1/me` | Get own profile |
-| `PUT` | `/v1/me` | Update own profile |
-| `PUT` | `/v1/me/password` | Change own password |
-| `GET` | `/v1/me/mfa` | Get MFA status |
-| `POST` | `/v1/me/mfa/enable` | Enable MFA |
-| `POST` | `/v1/me/mfa/disable` | Disable MFA |
+**See:** [api-specifications.md](./api-specifications.md)
 
 ---
 
-## 10. Rate Limiting
+## 9. Rate Limiting
 
-### Implementation
+**Redis-based sliding window** with API Gateway throttling. Progressive lockout for authentication failures (3 failures = 30s lockout, escalating to 24 hours).
 
-**Approach:** Redis-based sliding window with API Gateway as first line of defense
+**Key limits:**
+- Authentication: 5 login attempts/min per IP
+- Authorization: 5000 checks/min per service
+- User management: 100 reads/min, 20 creates/min per user
 
-```
-Request → API Gateway (throttle) → User Management Service (fine-grained limits)
-```
-
-### Rate Limits
-
-#### Authentication Endpoints
-
-| Endpoint | Limit | Window | Dimension |
-|----------|-------|--------|-----------|
-| `POST /auth/login` | 5 | 1 min | IP |
-| `POST /auth/login` | 10 | 1 min | Email |
-| `POST /auth/mfa/verify` | 5 | 1 min | User |
-| `POST /auth/password/forgot` | 3 | 1 hour | Email |
-| `POST /auth/password/reset` | 5 | 1 hour | IP |
-| `POST /auth/register` | 10 | 1 hour | IP |
-| `POST /auth/verify-email` | 5 | 1 min | Email |
-
-#### Authorization Endpoints
-
-| Endpoint | Limit | Window | Dimension |
-|----------|-------|--------|-----------|
-| `POST /authorize` | 5000 | 1 min | Service (IAM Role) |
-| `POST /authorize/batch` | 500 | 1 min | Service (IAM Role) |
-
-#### User Management Endpoints
-
-| Endpoint | Limit | Window | Dimension |
-|----------|-------|--------|-----------|
-| `GET /users` | 100 | 1 min | User |
-| `POST /users` | 20 | 1 min | User |
-| `PUT /users/{id}` | 30 | 1 min | User |
-| `DELETE /users/{id}` | 10 | 1 min | User |
-
-### Progressive Lockout (Authentication)
-
-| Consecutive Failures | Lockout Duration |
-|----------------------|------------------|
-| 3 | 30 seconds |
-| 5 | 5 minutes |
-| 10 | 1 hour |
-| 20 | 24 hours |
+**See:** [api-specifications.md](./api-specifications.md)
 
 ---
 
-## 11. Error Handling
+## 10. Error Handling
 
-### Response Format
+**Standardized JSON error format** with error codes, human-readable messages, and retry guidance.
 
-All errors return a standard JSON structure:
+**Error categories:**
+- 401: Authentication errors (TOKEN_EXPIRED, INVALID_CREDENTIALS)
+- 403: Authorization errors (USER_DISABLED, AUTHORIZATION_DENIED)
+- 400/422: Validation errors (INVALID_EMAIL_FORMAT, PASSWORD_TOO_WEAK)
+- 429: Rate limiting (RATE_LIMIT_EXCEEDED, ACCOUNT_LOCKED)
+- 5xx: Service errors (INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE)
 
-```json
-{
-  "error": {
-    "code": "AUTHORIZATION_DENIED",
-    "message": "You do not have permission to perform this action.",
-    "details": {
-      "action": "users:delete",
-      "resource": "user-456"
-    },
-    "request_id": "req-abc-123",
-    "timestamp": "2024-01-15T10:23:45.123Z"
-  },
-  "retry": {
-    "retryable": false
-  }
-}
-```
-
-### Error Codes
-
-| Category | HTTP Status | Codes | Retryable |
-|----------|-------------|-------|-----------|
-| Authentication | 401 | `TOKEN_EXPIRED`, `TOKEN_INVALID`, `MFA_REQUIRED` | No |
-| Authorization | 403 | `AUTHORIZATION_DENIED`, `USER_SUSPENDED`, `USER_DEACTIVATED` | No |
-| Validation | 422 | `VALIDATION_FAILED`, `INVALID_EMAIL_FORMAT` | No |
-| Resource | 404/409 | `USER_NOT_FOUND`, `USER_ALREADY_EXISTS`, `STATE_CONFLICT` | No |
-| Rate Limit | 429 | `RATE_LIMIT_EXCEEDED`, `ACCOUNT_LOCKED` | Yes |
-| Service | 5xx | `INTERNAL_ERROR`, `DEPENDENCY_UNAVAILABLE` | Yes |
-
-### Downstream Consumer Guidelines
-
-| Error Type | Action |
-|------------|--------|
-| 401 | Re-authenticate |
-| 403 | Do not retry, show error |
-| 422 | Fix input, do not retry |
-| 429 | Wait `retry_after` seconds, then retry |
-| 5xx | Retry with exponential backoff (max 3 attempts) |
+**See:** [api-specifications.md](./api-specifications.md)
 
 ---
 
-## 12. Scale & Non-Functional Expectations
+## 11. Scale & Non-Functional Expectations
 
 ### Expected Scale (POC Assumptions)
 
@@ -649,55 +473,79 @@ All errors return a standard JSON structure:
 | Tenants | Single |
 | Authorization checks/second | ~1,000 |
 
-### Performance
+### Cognito Limits
 
-| Operation | Latency Target |
-|-----------|----------------|
+| Limit | Default | Notes |
+|-------|---------|-------|
+| User pools per account | 1,000 | Sufficient |
+| Users per pool | 40,000,000 | Sufficient |
+| API rate limits | Varies | May need to request increase |
+
+### Performance Targets
+
+| Operation | Latency Target (p99) |
+|-----------|---------------------|
 | Authorization check (cached) | < 10ms |
 | Authorization check (uncached) | < 100ms |
 | Token validation | < 20ms |
-| User profile read | < 50ms |
+| User profile read | < 100ms |
 | User profile update | < 200ms |
+| Login (no MFA) | < 500ms |
+| Login (with MFA) | < 1000ms |
 
 ### Availability
 
-* High availability required
-* Single AWS region (acceptable for POC)
+- High availability provided by AWS managed services
+- Single AWS region (acceptable for POC)
+- Target: 99.9% uptime
 
 ---
 
-## 13. Security & Compliance
+## 12. Security & Compliance
 
-### Security Posture
+### Security Controls
 
 | Control | Implementation |
 |---------|----------------|
-| Authentication | Cognito with MFA |
-| Authorization | AVP (ABAC) |
-| Transport | TLS 1.2+ |
-| Service-to-service | IAM roles |
-| Secrets | AWS Secrets Manager |
-| Rate limiting | Redis + API Gateway |
+| Authentication | Amazon Cognito with MFA |
+| Authorization | Amazon Verified Permissions (ABAC) |
+| Transport Security | TLS 1.2+ |
+| Service-to-Service Auth | AWS IAM Roles |
+| Rate Limiting | Redis + API Gateway |
+| Input Validation | Schema validation on all inputs |
+| Password Storage | Cognito (bcrypt) |
+
+### Password Policy (Cognito)
+
+| Requirement | Value |
+|-------------|-------|
+| Minimum length | 12 characters |
+| Require uppercase | Yes |
+| Require lowercase | Yes |
+| Require numbers | Yes |
+| Require special characters | Yes |
+| Temporary password expiry | 7 days |
+
+### MFA Configuration
+
+| Setting | Value |
+|---------|-------|
+| MFA Type | TOTP (app-based) |
+| Enforcement - End Users | Optional |
+| Enforcement - Admins | Required |
 
 ### Immediate Revocation
 
-User state checked on every request:
+User enabled status checked on every authenticated request:
 
 ```
-JWT Valid + User State Active → Allow
-JWT Valid + User State Suspended → Deny (403)
-JWT Valid + User State Deactivated → Deny (403)
+JWT Valid + User Enabled → Allow
+JWT Valid + User Disabled → Deny (403 USER_DISABLED)
 ```
-
-### Audit & Compliance
-
-* Explicit audit logging out of scope for POC
-* Data retention supported at lifecycle level
-* Design allows audit features without architectural changes
 
 ---
 
-## 14. Observability
+## 13. Observability
 
 ### Tooling
 
@@ -709,49 +557,365 @@ JWT Valid + User State Deactivated → Deny (403)
 
 ### Key Metrics
 
-* Authentication success/failure rates
-* Authorization latency (p50, p95, p99)
-* Cache hit rates
-* Error rates by category
+| Category | Metrics |
+|----------|---------|
+| Authentication | Login success/failure rates, MFA usage |
+| Authorization | Latency (p50, p95, p99), cache hit rate |
+| Cognito | API call counts, throttling |
+| System | Error rates, request latency |
 
 ---
 
-## 15. Technology Stack
+## 14. Technology Stack
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Python (Django) |
-| Database | Amazon DynamoDB |
-| Cache | Amazon ElastiCache (Redis) |
-| Authentication | Amazon Cognito |
+| Backend Framework | Python (Django) |
+| User Data Store | Amazon Cognito |
 | Authorization | Amazon Verified Permissions |
+| Cache | Amazon ElastiCache (Redis) |
 | API Gateway | Amazon API Gateway |
-| Compute | AWS Lambda or ECS |
-| Secrets | AWS Secrets Manager |
+| Compute | AWS Lambda or Amazon ECS |
+| Monitoring | Amazon CloudWatch, AWS X-Ray |
+
+### What We Don't Need
+
+| Component | Reason |
+|-----------|--------|
+| DynamoDB | User data in Cognito |
+| RDS | No relational data |
+| Custom user database | Cognito handles everything |
 
 ---
 
-## 16. POC Success Criteria
+## 15. POC Success Criteria
 
-This POC is considered successful if it:
+This POC is considered successful if it demonstrates:
 
-* ✓ Demonstrates scalable design thinking
-* ✓ Shows security-conscious decision making
-* ✓ Maintains clean service boundaries
-* ✓ Abstracts managed services behind unified interface
-* ✓ Is easy to evolve into a production system
+- [ ] **Scalable Design** — Architecture supports 1M users, 10K concurrent sessions
+- [ ] **Security-First Approach** — MFA, ABAC, fail-closed authorization
+- [ ] **Clean Service Boundaries** — Cognito/AVP abstracted behind unified API
+- [ ] **Operational Readiness** — Error handling, rate limiting, observability
+- [ ] **Simplicity** — Minimal infrastructure using managed services
+
+---
+
+## 16. Future Considerations
+
+Features **not implemented** in POC but may be needed for production:
+
+| Feature | Limitation | Future Solution |
+|---------|------------|-----------------|
+| Soft delete | Users permanently deleted | Add DynamoDB for state tracking |
+| User recovery | Cannot restore deleted users | Add DynamoDB for soft delete |
+| State audit | No tracking of who disabled whom | Add DynamoDB or audit service |
+| Multi-tenancy | Single tenant only | Add tenant_id to schema |
+| Custom states | Only enabled/disabled | Add DynamoDB for custom states |
+| Rich queries | Limited Cognito queries | Add DynamoDB or search service |
+| Federated identity | Not configured | Add SAML/OIDC to Cognito |
 
 ---
 
-## 17. Future Considerations (Not Implemented)
+## Appendices
 
-| Feature | Notes |
-|---------|-------|
-| Multi-tenancy | Schema supports `tenant_id` |
-| Event-driven lifecycle | SNS/EventBridge integration |
-| Advanced audit logging | Dedicated audit service |
-| Cross-region deployment | DynamoDB Global Tables |
-| Hard deletion / GDPR | Compliance workflows |
-| Federated identity | SAML/OIDC providers |
+### Appendix A: Cedar Policy Examples
+
+```cedar
+// Allow users to read their own profile
+permit (
+    principal,
+    action == Action::"User:read",
+    resource
+) when {
+    principal.id == resource.id
+};
+
+// Allow users to update their own profile
+permit (
+    principal,
+    action == Action::"User:update",
+    resource
+) when {
+    principal.id == resource.id
+};
+
+// Allow admins to read all users
+permit (
+    principal,
+    action == Action::"User:read",
+    resource
+) when {
+    principal.user_type == "admin"
+};
+
+// Allow admins to manage users
+permit (
+    principal,
+    action in [
+        Action::"User:create",
+        Action::"User:update", 
+        Action::"User:delete",
+        Action::"User:disable",
+        Action::"User:enable",
+        Action::"User:list"
+    ],
+    resource
+) when {
+    principal.user_type == "admin"
+};
+
+// Deny all actions for disabled users
+forbid (
+    principal,
+    action,
+    resource
+) when {
+    principal.enabled == false
+};
+```
 
 ---
+
+### Appendix B: Cognito User Pool Configuration
+
+#### End User Pool
+
+```json
+{
+  "PoolName": "user-management-end-users",
+  "Policies": {
+    "PasswordPolicy": {
+      "MinimumLength": 12,
+      "RequireUppercase": true,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "TemporaryPasswordValidityDays": 7
+    }
+  },
+  "AutoVerifiedAttributes": ["email"],
+  "UsernameAttributes": ["email"],
+  "UsernameConfiguration": {
+    "CaseSensitive": false
+  },
+  "MfaConfiguration": "OPTIONAL",
+  "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+  "AccountRecoverySetting": {
+    "RecoveryMechanisms": [
+      {"Name": "verified_email", "Priority": 1}
+    ]
+  },
+  "Schema": [
+    {
+      "Name": "email",
+      "AttributeDataType": "String",
+      "Required": true,
+      "Mutable": false
+    },
+    {
+      "Name": "given_name",
+      "AttributeDataType": "String",
+      "Required": false,
+      "Mutable": true
+    },
+    {
+      "Name": "family_name",
+      "AttributeDataType": "String",
+      "Required": false,
+      "Mutable": true
+    },
+    {
+      "Name": "phone_number",
+      "AttributeDataType": "String",
+      "Required": false,
+      "Mutable": true
+    },
+    {
+      "Name": "custom:user_type",
+      "AttributeDataType": "String",
+      "Required": false,
+      "Mutable": false,
+      "StringAttributeConstraints": {
+        "MinLength": "1",
+        "MaxLength": "20"
+      }
+    }
+  ],
+  "EmailConfiguration": {
+    "EmailSendingAccount": "COGNITO_DEFAULT"
+  },
+  "VerificationMessageTemplate": {
+    "DefaultEmailOption": "CONFIRM_WITH_CODE"
+  }
+}
+```
+
+#### Admin User Pool
+
+```json
+{
+  "PoolName": "user-management-admins",
+  "Policies": {
+    "PasswordPolicy": {
+      "MinimumLength": 14,
+      "RequireUppercase": true,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "TemporaryPasswordValidityDays": 1
+    }
+  },
+  "AutoVerifiedAttributes": ["email"],
+  "UsernameAttributes": ["email"],
+  "MfaConfiguration": "ON",
+  "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+  "AccountRecoverySetting": {
+    "RecoveryMechanisms": [
+      {"Name": "verified_email", "Priority": 1}
+    ]
+  }
+}
+```
+
+---
+
+### Appendix C: Cognito App Client Configuration
+
+```json
+{
+  "ClientName": "user-management-api",
+  "GenerateSecret": false,
+  "RefreshTokenValidity": 7,
+  "AccessTokenValidity": 15,
+  "IdTokenValidity": 15,
+  "TokenValidityUnits": {
+    "AccessToken": "minutes",
+    "IdToken": "minutes",
+    "RefreshToken": "days"
+  },
+  "ExplicitAuthFlows": [
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+    "ALLOW_USER_SRP_AUTH"
+  ],
+  "SupportedIdentityProviders": ["COGNITO"],
+  "PreventUserExistenceErrors": "ENABLED",
+  "EnableTokenRevocation": true,
+  "AuthSessionValidity": 3
+}
+```
+
+---
+
+### Appendix D: API Gateway IAM Policy
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/order-service-role"
+      },
+      "Action": "execute-api:Invoke",
+      "Resource": [
+        "arn:aws:execute-api:us-east-1:123456789012:api-id/prod/POST/v1/authorize",
+        "arn:aws:execute-api:us-east-1:123456789012:api-id/prod/POST/v1/authorize/batch",
+        "arn:aws:execute-api:us-east-1:123456789012:api-id/prod/GET/v1/users/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/admin-dashboard-role"
+      },
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:us-east-1:123456789012:api-id/prod/*"
+    }
+  ]
+}
+```
+
+---
+
+### Appendix E: Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `COGNITO_USER_POOL_ID` | End user Cognito pool ID | `us-east-1_aBcDeFgHi` |
+| `COGNITO_ADMIN_POOL_ID` | Admin Cognito pool ID | `us-east-1_xYzAbCdEf` |
+| `COGNITO_CLIENT_ID` | Cognito app client ID | `1abc2def3ghi4jkl5mno` |
+| `COGNITO_CLIENT_SECRET` | Cognito app client secret (if enabled) | `secret...` |
+| `AVP_POLICY_STORE_ID` | Verified Permissions store ID | `ps-12345678` |
+| `REDIS_HOST` | ElastiCache Redis host | `redis.xxx.cache.amazonaws.com` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+
+---
+
+### Appendix F: Architecture Diagram
+
+```
+                                    ┌─────────────────────────────────────┐
+                                    │           AWS Cloud                 │
+┌──────────────┐                    │                                     │
+│   End User   │───HTTPS───────────▶│  ┌─────────────────────────────┐   │
+│   Browser    │                    │  │      API Gateway            │   │
+└──────────────┘                    │  │   (REST + IAM Auth)         │   │
+                                    │  └──────────────┬──────────────┘   │
+┌──────────────┐                    │                 │                  │
+│  Downstream  │───IAM Signed──────▶│                 ▼                  │
+│   Services   │                    │  ┌─────────────────────────────┐   │
+└──────────────┘                    │  │   User Management Service   │   │
+                                    │  │      (Lambda / ECS)         │   │
+                                    │  └──────────────┬──────────────┘   │
+                                    │                 │                  │
+                                    │    ┌────────────┼────────────┐     │
+                                    │    │            │            │     │
+                                    │    ▼            ▼            ▼     │
+                                    │ ┌──────┐   ┌────────┐   ┌───────┐  │
+                                    │ │Cognito│  │  AVP   │   │ Redis │  │
+                                    │ │(Users)│  │(AuthZ) │   │(Cache)│  │
+                                    │ └──────┘   └────────┘   └───────┘  │
+                                    │                                     │
+                                    └─────────────────────────────────────┘
+```
+
+---
+
+## Document History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2024-01-15 | Initial POC analysis |
+| 2.0 | 2024-01-21 | Simplified to Cognito-only approach |
+
+---
+
+## References
+
+- [Amazon Cognito Developer Guide](https://docs.aws.amazon.com/cognito/latest/developerguide/)
+- [Amazon Verified Permissions User Guide](https://docs.aws.amazon.com/verifiedpermissions/latest/userguide/)
+- [Cedar Policy Language Guide](https://docs.cedarpolicy.com/)
+- [Cognito User Pool Limits](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html)
+- [API Gateway IAM Authorization](https://docs.aws.amazon.com/apigateway/latest/developerguide/permissions.html)
+```
+
+---
+
+## Summary of Changes from Previous Version
+
+| Aspect | Before (Hybrid) | After (Cognito-Only) |
+|--------|-----------------|----------------------|
+| User data store | DynamoDB + Cognito | Cognito only |
+| Custom states | Suspended, Deactivated, etc. | Enabled/Disabled only |
+| Soft delete | Yes (recoverable) | No (permanent delete) |
+| State tracking | Who/when/why recorded | Not tracked |
+| Rich queries | DynamoDB GSIs | Limited Cognito queries |
+| Infrastructure | More complex | Simpler |
+| Multi-tenancy ready | Yes (tenant_id) | No |
+| POC complexity | Higher | Lower |
+
+This simplified approach is ideal for a POC while maintaining the option to add DynamoDB later if production requirements demand it.

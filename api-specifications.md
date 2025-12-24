@@ -8,44 +8,99 @@
 - **Base URL:** `https://api.usermanagement.internal/v1`
 - **Content Type:** `application/json`
 
-### Endpoints
+---
 
-#### Authentication Endpoints
+## Endpoints
+
+### Authentication Endpoints
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `POST` | `/auth/register` | Self-registration | No |
-| `POST` | `/auth/verify-email` | Verify email OTP | No |
-| `POST` | `/auth/resend-verification` | Resend verification email | No |
-| `POST` | `/auth/login` | User login | No |
-| `POST` | `/auth/mfa/verify` | Verify MFA code | Session Token |
-| `POST` | `/auth/token/refresh` | Refresh access token | Refresh Token |
-| `POST` | `/auth/logout` | Logout (revoke tokens) | Yes |
-| `POST` | `/auth/password/forgot` | Request password reset | No |
-| `POST` | `/auth/password/reset` | Reset password with token | No |
+| POST | /auth/register | Self-registration | No |
+| POST | /auth/verify-email | Verify email OTP | No |
+| POST | /auth/resend-verification | Resend verification email | No |
+| POST | /auth/login | User login | No |
+| POST | /auth/mfa/verify | Verify MFA code | Session Token |
+| POST | /auth/token/refresh | Refresh access token | Refresh Token |
+| POST | /auth/logout | Logout (revoke tokens) | Yes |
+| POST | /auth/password/forgot | Request password reset | No |
+| POST | /auth/password/reset | Reset password with token | No |
 
-#### Authorization Endpoints
+---
+
+### Authorization Endpoints
+
+#### Authentication Requirements (Authorization APIs)
+
+The `/authorize` and `/authorize/batch` endpoints are **service-to-service only**.
+
+- User JWTs are **NOT accepted**
+- Requests must be authenticated using **AWS IAM (SigV4)**
+- Intended consumers are **internal microservices only**
+
+This enforces strict service boundaries and prevents direct user access
+to authorization decisions.
+
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `POST` | `/authorize` | Check authorization | IAM Role |
-| `POST` | `/authorize/batch` | Batch authorization check | IAM Role |
+| POST | /authorize | Check authorization | IAM Role |
+| POST | /authorize/batch | Batch authorization check | IAM Role |
 
-#### User Management Endpoints
+---
+
+### Endpoint to Authorization Mapping
+
+The following table defines how REST endpoints map to authorization
+actions evaluated by Amazon Verified Permissions (AVP).
+
+| HTTP Method | Endpoint | Authorization Action | Resource |
+|------------|----------|----------------------|----------|
+| POST | /users | User:create | User |
+| GET | /users | User:list | User |
+| GET | /users/{id} | User:read | User:{id} |
+| PUT | /users/{id} | User:update | User:{id} |
+| DELETE | /users/{id} | User:delete | User:{id} |
+| POST | /users/{id}/disable | User:disable | User:{id} |
+| POST | /users/{id}/enable | User:enable | User:{id} |
+| GET | /me | User:read | User:self |
+| PUT | /me | User:update | User:self |
+
+Authorization decisions are evaluated using:
+- Principal attributes from Cognito (e.g., `user_type`)
+- Resource attributes (user ID, ownership)
+- Request context (action, request source)
+
+All authorization checks are **fail-closed**.
+
+---
+
+### User Management Endpoints
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `POST` | `/users` | Create user (admin) | Yes (Admin) |
-| `GET` | `/users` | List users | Yes (Admin) |
-| `GET` | `/users/{id}` | Get user by ID | Yes |
-| `PUT` | `/users/{id}` | Update user | Yes |
-| `DELETE` | `/users/{id}` | Delete user (permanent) | Yes (Admin) |
-| `POST` | `/users/{id}/disable` | Disable user | Yes (Admin) |
-| `POST` | `/users/{id}/enable` | Enable user | Yes (Admin) |
+| POST | /users | Create user (admin) | Yes (Admin) |
+| GET | /users | List users | Yes (Admin) |
+| GET | /users/{id} | Get user by ID | Yes |
+| PUT | /users/{id} | Update user | Yes |
+| DELETE | /users/{id} | Delete user (permanent) | Yes (Admin) |
+| POST | /users/{id}/disable | Disable user | Yes (Admin) |
+| POST | /users/{id}/enable | Enable user | Yes (Admin) |
 
-#### Profile Endpoints (Self-Service)
+⚠️ **Hard Delete Warning**
+
+This operation permanently deletes the user from Amazon Cognito.
+- All user data is irreversibly removed
+- Active tokens are immediately invalidated
+- User recovery is not possible
+
+This behavior is intentional for the POC.
+
+---
+
+### Profile Endpoints (Self-Service)
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `GET` | `/me` | Get own profile | Yes |
-| `PUT` | `/me` | Update own profile | Yes |
-| `POST` | `/me/mfa/setup` | Setup MFA | Yes |
+| GET | /me | Get own profile | Yes |
+| PUT | /me | Update own profile | Yes |
+| POST | /me/mfa/setup | Setup MFA | Yes |
 
 ---
 
@@ -59,46 +114,31 @@ Redis-based sliding window with API Gateway as first line of defense.
 #### Authentication Endpoints
 | Endpoint | Limit | Window | Dimension |
 |----------|-------|--------|-----------|
-| `POST /auth/register` | 10 | 1 hour | IP |
-| `POST /auth/login` | 5 | 1 min | IP |
-| `POST /auth/mfa/verify` | 5 | 1 min | Session |
-| `POST /auth/token/refresh` | 10 | 1 min | User |
+| POST /auth/register | 10 | 1 hour | IP |
+| POST /auth/login | 5 | 1 min | IP |
+| POST /auth/mfa/verify | 5 | 1 min | Session |
+| POST /auth/token/refresh | 10 | 1 min | User |
 
 #### Authorization Endpoints
 | Endpoint | Limit | Window | Dimension |
 |----------|-------|--------|-----------|
-| `POST /authorize` | 5000 | 1 min | Service (IAM Role) |
-| `POST /authorize/batch` | 500 | 1 min | Service (IAM Role) |
+| POST /authorize | 5000 | 1 min | Service (IAM Role) |
+| POST /authorize/batch | 500 | 1 min | Service (IAM Role) |
 
 #### User Management Endpoints
 | Endpoint | Limit | Window | Dimension |
 |----------|-------|--------|-----------|
-| `GET /users` | 100 | 1 min | User |
-| `POST /users` | 20 | 1 min | User |
-| `GET /users/{id}` | 100 | 1 min | User |
-| `PUT /users/{id}` | 30 | 1 min | User |
-| `DELETE /users/{id}` | 10 | 1 min | User |
+| GET /users | 100 | 1 min | User |
+| POST /users | 20 | 1 min | User |
+| GET /users/{id} | 100 | 1 min | User |
+| PUT /users/{id} | 30 | 1 min | User |
+| DELETE /users/{id} | 10 | 1 min | User |
 
 #### Profile Endpoints
 | Endpoint | Limit | Window | Dimension |
 |----------|-------|--------|-----------|
-| `GET /me` | 100 | 1 min | User |
-| `PUT /me` | 30 | 1 min | User |
-
-### Progressive Lockout (Authentication)
-| Consecutive Failures | Lockout Duration |
-|----------------------|------------------|
-| 3 | 30 seconds |
-| 5 | 5 minutes |
-| 10 | 1 hour |
-| 20 | 24 hours |
-
-### Rate Limit Response Headers
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1704398460
-```
+| GET /me | 100 | 1 min | User |
+| PUT /me | 30 | 1 min | User |
 
 ---
 

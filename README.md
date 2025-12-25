@@ -96,19 +96,33 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtual environment and install dependencies
 uv sync
+
+# Add Django to the project
+uv add django
 ```
 
-3. **Run migrations**
+3. **Django Project Setup** ✅ Complete
+
+The Django project has been initialized in the current directory:
+
+```bash
+# Project structure created with:
+uv run django-admin startproject fortress .
+```
+
+4. **Run migrations**
 
 ```bash
 uv run python manage.py migrate
 ```
 
-4. **Start the development server**
+5. **Start the development server**
 
 ```bash
 uv run python manage.py runserver
 ```
+
+The server will be available at `http://127.0.0.1:8000/`
 
 ## Development
 
@@ -186,18 +200,24 @@ fortress/
 ├── docs/                       # Documentation
 │   ├── api-specifications.md   # Complete API reference
 │   └── user-management-service-poc.md  # Architecture & design decisions
-├── fortress/                   # Main application (to be created)
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
+├── fortress/                   # Django project directory ✅
+│   ├── __init__.py
+│   ├── asgi.py                # ASGI config for async support
+│   ├── settings.py            # Project settings
+│   ├── urls.py                # URL routing
+│   └── wsgi.py                # WSGI config for deployment
 ├── apps/                       # Django apps (to be created)
 │   ├── authentication/
 │   ├── authorization/
 │   └── users/
+├── manage.py                  # Django management script ✅
 ├── pyproject.toml             # Project configuration
 ├── uv.lock                    # Dependency lock file
+├── .python-version            # Python version (3.11+)
 └── README.md                  # This file
 ```
+
+**Status**: Django 5.2.9 project initialized and ready for development.
 
 ## Documentation
 

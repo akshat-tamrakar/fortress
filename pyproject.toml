@@ -1,0 +1,51 @@
+[project]
+name = "fortress"
+version = "0.1.0"
+description = "Enterprise-grade User Management Service built with Django"
+readme = "README.md"
+requires-python = ">=3.11"
+
+authors = [
+    { name = "Akshat Tamrakar", email = "akshat1997tamrakar@gmail.com" }
+]
+
+dependencies = [
+    "django>=5.0,<6.0",
+    "djangorestframework>=3.15",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "pytest-cov>=4.1.0",
+]
+
+# --------------------
+# uv configuration
+# --------------------
+[tool.uv]
+managed = true
+
+# --------------------
+# Ruff (lint + format)
+# --------------------
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# --------------------
+# Pytest
+# --------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-ra -q"

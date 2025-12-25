@@ -60,6 +60,17 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+*.sqlite
+
+# Django media files (uploaded content)
+/media/
+media/
+
+# Django static files (collected static files)
+/staticfiles/
+/static_root/
+/static/
+staticfiles/
 
 # Flask stuff:
 instance/
@@ -200,6 +211,23 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Environment variables and secrets
+.env.local
+.env.*.local
+secrets.json
+
+# Database backups
+*.dump
+*.sql
 
 # Marimo
 marimo/_static/

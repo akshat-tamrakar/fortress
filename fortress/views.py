@@ -12,7 +12,7 @@ from django.views.decorators.http import require_http_methods
 def health_check(request):
     """
     Health check endpoint for container orchestration and load balancers.
-    
+
     Returns:
         JsonResponse: Simple OK response indicating the service is healthy
     """

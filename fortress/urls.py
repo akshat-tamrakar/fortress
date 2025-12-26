@@ -28,8 +28,16 @@ urlpatterns = [
     # Django REST Framework authentication URLs (for browsable API)
     path("api-auth/", include("rest_framework.urls")),
     # API v1 endpoints
-    path("v1/auth/", include(("apps.authentication.urls", "authentication"), namespace="auth")),
-    path("v1/authorize/", include(("apps.authorization.urls", "authorization"), namespace="authorization")),
+    path(
+        "v1/auth/",
+        include(("apps.authentication.urls", "authentication"), namespace="auth"),
+    ),
+    path(
+        "v1/authorize/",
+        include(
+            ("apps.authorization.urls", "authorization"), namespace="authorization"
+        ),
+    ),
     path("v1/users/", include("apps.users.urls")),
     path("v1/me/", include(me_urlpatterns)),
 ]

@@ -177,7 +177,9 @@ class CognitoClient:
 
                 # Unknown challenge
                 logger.warning(f"Unknown Cognito challenge: {challenge_name}")
-                raise ValidationError(f"Unexpected authentication challenge: {challenge_name}")
+                raise ValidationError(
+                    f"Unexpected authentication challenge: {challenge_name}"
+                )
 
             # Successful authentication
             return {"tokens": self._extract_tokens(response["AuthenticationResult"])}
@@ -279,14 +281,18 @@ class CognitoClient:
                 Username=email,
             )
 
-            return {"message": "If the email exists, a password reset code has been sent."}
+            return {
+                "message": "If the email exists, a password reset code has been sent."
+            }
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
 
             # Don't reveal if user exists
             if error_code in ("UserNotFoundException", "InvalidParameterException"):
-                return {"message": "If the email exists, a password reset code has been sent."}
+                return {
+                    "message": "If the email exists, a password reset code has been sent."
+                }
 
             self._handle_error(e)
 

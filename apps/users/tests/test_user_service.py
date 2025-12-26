@@ -59,10 +59,14 @@ def cognito_user_response():
 class TestUserServiceCreateUser:
     """Tests for UserService.create_user method."""
 
-    def test_create_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_create_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user creation."""
         # Arrange
-        mock_boto3_client.admin_create_user.return_value = {"User": cognito_user_response}
+        mock_boto3_client.admin_create_user.return_value = {
+            "User": cognito_user_response
+        }
 
         # Act
         result = user_service.create_user(
@@ -79,10 +83,14 @@ class TestUserServiceCreateUser:
         assert result["given_name"] == "John"
         assert result["family_name"] == "Doe"
 
-    def test_create_user_without_phone(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_create_user_without_phone(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test user creation without phone number."""
         # Arrange
-        mock_boto3_client.admin_create_user.return_value = {"User": cognito_user_response}
+        mock_boto3_client.admin_create_user.return_value = {
+            "User": cognito_user_response
+        }
 
         # Act
         result = user_service.create_user(
@@ -94,13 +102,20 @@ class TestUserServiceCreateUser:
         # Assert
         call_args = mock_boto3_client.admin_create_user.call_args
         user_attributes = call_args[1]["UserAttributes"]
-        phone_attrs = [attr for attr in user_attributes if attr["Name"] == "phone_number"]
+        phone_attrs = [
+            attr for attr in user_attributes if attr["Name"] == "phone_number"
+        ]
         assert len(phone_attrs) == 0
 
     def test_create_user_already_exists(self, user_service, mock_boto3_client):
         """Test user creation when user already exists."""
         # Arrange
-        error_response = {"Error": {"Code": "UsernameExistsException", "Message": "User already exists"}}
+        error_response = {
+            "Error": {
+                "Code": "UsernameExistsException",
+                "Message": "User already exists",
+            }
+        }
         mock_boto3_client.admin_create_user.side_effect = ClientError(
             error_response, "AdminCreateUser"
         )
@@ -118,7 +133,9 @@ class TestUserServiceCreateUser:
 class TestUserServiceGetUser:
     """Tests for UserService.get_user method."""
 
-    def test_get_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_get_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user retrieval."""
         # Arrange
         mock_boto3_client.list_users.return_value = {"Users": [cognito_user_response]}
@@ -145,7 +162,9 @@ class TestUserServiceGetUser:
 class TestUserServiceListUsers:
     """Tests for UserService.list_users method."""
 
-    def test_list_users_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_list_users_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user listing."""
         # Arrange
         mock_boto3_client.list_users.return_value = {
@@ -183,7 +202,9 @@ class TestUserServiceListUsers:
 class TestUserServiceUpdateUser:
     """Tests for UserService.update_user method."""
 
-    def test_update_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_update_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user update."""
         # Arrange
         mock_boto3_client.list_users.return_value = {"Users": [cognito_user_response]}
@@ -215,7 +236,9 @@ class TestUserServiceUpdateUser:
 class TestUserServiceDeleteUser:
     """Tests for UserService.delete_user method."""
 
-    def test_delete_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_delete_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user deletion."""
         # Arrange
         mock_boto3_client.list_users.return_value = {"Users": [cognito_user_response]}
@@ -235,7 +258,9 @@ class TestUserServiceDeleteUser:
 class TestUserServiceDisableUser:
     """Tests for UserService.disable_user method."""
 
-    def test_disable_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_disable_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user disabling."""
         # Arrange
         mock_boto3_client.list_users.return_value = {"Users": [cognito_user_response]}
@@ -255,7 +280,9 @@ class TestUserServiceDisableUser:
 class TestUserServiceEnableUser:
     """Tests for UserService.enable_user method."""
 
-    def test_enable_user_success(self, user_service, mock_boto3_client, cognito_user_response):
+    def test_enable_user_success(
+        self, user_service, mock_boto3_client, cognito_user_response
+    ):
         """Test successful user enabling."""
         # Arrange
         mock_boto3_client.list_users.return_value = {"Users": [cognito_user_response]}
@@ -295,7 +322,10 @@ class TestUserServiceSetupMFA:
         """Test MFA setup when MFA is already enabled."""
         # Arrange
         error_response = {
-            "Error": {"Code": "InvalidParameterException", "Message": "MFA already enabled"}
+            "Error": {
+                "Code": "InvalidParameterException",
+                "Message": "MFA already enabled",
+            }
         }
         mock_boto3_client.associate_software_token.side_effect = ClientError(
             error_response, "AssociateSoftwareToken"
@@ -330,7 +360,10 @@ class TestUserServiceVerifyMFASetup:
         """Test MFA verification with invalid code."""
         # Arrange
         error_response = {
-            "Error": {"Code": "EnableSoftwareTokenMFAException", "Message": "Invalid code"}
+            "Error": {
+                "Code": "EnableSoftwareTokenMFAException",
+                "Message": "Invalid code",
+            }
         }
         mock_boto3_client.verify_software_token.side_effect = ClientError(
             error_response, "VerifySoftwareToken"
@@ -364,7 +397,9 @@ class TestUserServiceGetUserByToken:
         result = user_service.get_user_by_token("access-token-123")
 
         # Assert
-        mock_boto3_client.get_user.assert_called_once_with(AccessToken="access-token-123")
+        mock_boto3_client.get_user.assert_called_once_with(
+            AccessToken="access-token-123"
+        )
         assert result["user_id"] == "123e4567-e89b-12d3-a456-426614174000"
         assert result["email"] == "test@example.com"
         assert result["mfa_enabled"] is True
@@ -375,9 +410,7 @@ class TestUserServiceGetUserByToken:
         error_response = {
             "Error": {"Code": "NotAuthorizedException", "Message": "Invalid token"}
         }
-        mock_boto3_client.get_user.side_effect = ClientError(
-            error_response, "GetUser"
-        )
+        mock_boto3_client.get_user.side_effect = ClientError(error_response, "GetUser")
 
         # Act & Assert
         with pytest.raises(TokenInvalidError):

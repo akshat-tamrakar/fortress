@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class UserService:
     """
     User Management Service for CRUD operations and lifecycle management.
-    
+
     All user data is stored in AWS Cognito. This service abstracts Cognito
     operations and provides a clean interface for user management.
     """
@@ -54,20 +54,20 @@ class UserService:
     ) -> dict[str, Any]:
         """
         Create a new user (admin-initiated).
-        
+
         User is created in FORCE_CHANGE_PASSWORD state and receives
         a temporary password via email.
-        
+
         Args:
             email: User's email address (used as username)
             given_name: User's first name
             family_name: User's last name
             user_type: 'end_user' or 'admin'
             phone_number: Optional phone number in E.164 format
-            
+
         Returns:
             dict with user details (user_id, email, status, etc.)
-            
+
         Raises:
             UserAlreadyExistsError: If user with email already exists
             ValidationError: If input validation fails
@@ -93,7 +93,7 @@ class UserService:
             )
 
             user = response["User"]
-            
+
             return self._format_user_response(user)
 
         except ClientError as e:
@@ -102,13 +102,13 @@ class UserService:
     def get_user(self, user_id: str) -> dict[str, Any]:
         """
         Get user details by user ID.
-        
+
         Args:
             user_id: User's Cognito sub (UUID)
-            
+
         Returns:
             dict with user details
-            
+
         Raises:
             UserNotFoundError: If user doesn't exist
         """
@@ -136,11 +136,11 @@ class UserService:
     ) -> dict[str, Any]:
         """
         List all users with pagination.
-        
+
         Args:
             limit: Maximum number of users to return (1-60)
             pagination_token: Token for next page of results
-            
+
         Returns:
             dict with 'users' list and optional 'next_token'
         """
@@ -156,7 +156,10 @@ class UserService:
             response = self.client.list_users(**params)
 
             return {
-                "users": [self._format_user_response(user) for user in response.get("Users", [])],
+                "users": [
+                    self._format_user_response(user)
+                    for user in response.get("Users", [])
+                ],
                 "next_token": response.get("PaginationToken"),
             }
 
@@ -172,18 +175,18 @@ class UserService:
     ) -> dict[str, Any]:
         """
         Update user attributes.
-        
+
         Note: Email and user_type are immutable.
-        
+
         Args:
             user_id: User's Cognito sub (UUID)
             given_name: New first name (optional)
             family_name: New last name (optional)
             phone_number: New phone number (optional)
-            
+
         Returns:
             dict with updated user details
-            
+
         Raises:
             UserNotFoundError: If user doesn't exist
         """
@@ -217,13 +220,13 @@ class UserService:
     def delete_user(self, user_id: str) -> None:
         """
         Permanently delete a user from Cognito.
-        
+
         ⚠️ This is a hard delete - user data cannot be recovered.
         All tokens are immediately invalidated.
-        
+
         Args:
             user_id: User's Cognito sub (UUID)
-            
+
         Raises:
             UserNotFoundError: If user doesn't exist
         """
@@ -243,16 +246,16 @@ class UserService:
     def disable_user(self, user_id: str) -> dict[str, Any]:
         """
         Disable a user account.
-        
+
         Disabled users cannot authenticate. All active tokens remain
         valid but will be rejected when validated against user status.
-        
+
         Args:
             user_id: User's Cognito sub (UUID)
-            
+
         Returns:
             dict with updated user details
-            
+
         Raises:
             UserNotFoundError: If user doesn't exist
         """
@@ -275,13 +278,13 @@ class UserService:
     def enable_user(self, user_id: str) -> dict[str, Any]:
         """
         Enable a previously disabled user account.
-        
+
         Args:
             user_id: User's Cognito sub (UUID)
-            
+
         Returns:
             dict with updated user details
-            
+
         Raises:
             UserNotFoundError: If user doesn't exist
         """
@@ -304,16 +307,16 @@ class UserService:
     def setup_mfa(self, access_token: str) -> dict[str, Any]:
         """
         Setup TOTP MFA for a user.
-        
+
         Returns a secret code that the user must enter into their
         authenticator app (Google Authenticator, Authy, etc.).
-        
+
         Args:
             access_token: User's valid access token
-            
+
         Returns:
             dict with 'secret_code' for authenticator app setup
-            
+
         Raises:
             TokenInvalidError: If access token is invalid
             MFAAlreadyEnabledError: If MFA is already enabled
@@ -330,23 +333,23 @@ class UserService:
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
-            
+
             if error_code == "InvalidParameterException":
                 raise MFAAlreadyEnabledError("MFA is already enabled for this user")
-            
+
             self._handle_error(e)
 
     def verify_mfa_setup(self, access_token: str, totp_code: str) -> dict[str, Any]:
         """
         Verify MFA setup with a TOTP code.
-        
+
         Args:
             access_token: User's valid access token
             totp_code: 6-digit TOTP code from authenticator app
-            
+
         Returns:
             dict with success message
-            
+
         Raises:
             InvalidMFACodeError: If TOTP code is invalid
             TokenInvalidError: If access token is invalid
@@ -370,24 +373,24 @@ class UserService:
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
-            
+
             if error_code == "EnableSoftwareTokenMFAException":
                 raise InvalidMFACodeError("Invalid TOTP code")
-            
+
             self._handle_error(e)
 
     def get_user_by_token(self, access_token: str) -> dict[str, Any]:
         """
         Get user details from access token.
-        
+
         Used for /me endpoints to get current user's profile.
-        
+
         Args:
             access_token: User's valid access token
-            
+
         Returns:
             dict with user details
-            
+
         Raises:
             TokenInvalidError: If access token is invalid
         """
@@ -416,10 +419,10 @@ class UserService:
     def _format_user_response(self, user: dict[str, Any]) -> dict[str, Any]:
         """
         Format Cognito user response into standardized user dict.
-        
+
         Args:
             user: Raw Cognito user object
-            
+
         Returns:
             dict with standardized user fields
         """
@@ -447,17 +450,21 @@ class UserService:
             "email_verified": attributes.get("email_verified") == "true",
             "status": status,
             "mfa_enabled": user.get("MFAOptions") is not None,
-            "created_at": user.get("UserCreateDate").isoformat() if user.get("UserCreateDate") else None,
-            "updated_at": user.get("UserLastModifiedDate").isoformat() if user.get("UserLastModifiedDate") else None,
+            "created_at": user.get("UserCreateDate").isoformat()
+            if user.get("UserCreateDate")
+            else None,
+            "updated_at": user.get("UserLastModifiedDate").isoformat()
+            if user.get("UserLastModifiedDate")
+            else None,
         }
 
     def _handle_error(self, error: ClientError) -> None:
         """
         Translate Cognito errors to application exceptions.
-        
+
         Args:
             error: Boto3 ClientError from Cognito
-            
+
         Raises:
             Appropriate application exception
         """

@@ -17,7 +17,11 @@ app_name = "authentication"
 urlpatterns = [
     path("register", RegisterView.as_view(), name="register"),
     path("verify-email", VerifyEmailView.as_view(), name="verify-email"),
-    path("resend-verification", ResendVerificationView.as_view(), name="resend-verification"),
+    path(
+        "resend-verification",
+        ResendVerificationView.as_view(),
+        name="resend-verification",
+    ),
     path("login", LoginView.as_view(), name="login"),
     path("mfa/verify", MFAVerifyView.as_view(), name="mfa-verify"),
     path("token/refresh", TokenRefreshView.as_view(), name="token-refresh"),

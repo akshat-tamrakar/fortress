@@ -224,7 +224,9 @@ AVP_POLICY_STORE_ID = os.environ.get("AVP_POLICY_STORE_ID", "")
 # ==============================
 # Authorization Service Configuration
 # ==============================
-AUTHORIZATION_SERVICE_URL = os.environ.get("AUTHORIZATION_SERVICE_URL", "http://localhost:8000/v1/authorization")
+AUTHORIZATION_SERVICE_URL = os.environ.get(
+    "AUTHORIZATION_SERVICE_URL", "http://localhost:8000/v1/authorization"
+)
 
 # ==============================
 # Redis Configuration for Authorization

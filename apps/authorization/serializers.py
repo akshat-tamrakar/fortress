@@ -13,13 +13,13 @@ from rest_framework import serializers
 # =============================================================================
 
 VALID_ACTIONS = [
-    'User:create',
-    'User:read',
-    'User:update',
-    'User:delete',
-    'User:list',
-    'User:disable',
-    'User:enable',
+    "User:create",
+    "User:read",
+    "User:update",
+    "User:delete",
+    "User:list",
+    "User:disable",
+    "User:enable",
 ]
 
 
@@ -32,10 +32,7 @@ class PrincipalSerializer(serializers.Serializer):
     """Serializer for principal (user) in authorization requests."""
 
     id = serializers.UUIDField(required=True)
-    type = serializers.ChoiceField(
-        choices=['User', 'AdminUser'],
-        default='User'
-    )
+    type = serializers.ChoiceField(choices=["User", "AdminUser"], default="User")
     attributes = serializers.DictField(required=False, default=dict)
 
 
@@ -48,7 +45,7 @@ class ResourceSerializer(serializers.Serializer):
 
     def validate_id(self, value: str) -> str:
         """Validate resource id is either 'self' or a valid UUID format."""
-        if value == 'self':
+        if value == "self":
             return value
         # Allow UUID format validation to be flexible
         # The actual UUID validation happens at the AVP level
@@ -97,13 +94,9 @@ class BatchAuthorizeRequestSerializer(serializers.Serializer):
     def validate_items(self, value: list) -> list:
         """Validate batch contains between 1 and 30 items."""
         if len(value) > 30:
-            raise serializers.ValidationError(
-                "Batch cannot exceed 30 items"
-            )
+            raise serializers.ValidationError("Batch cannot exceed 30 items")
         if len(value) == 0:
-            raise serializers.ValidationError(
-                "Batch must contain at least 1 item"
-            )
+            raise serializers.ValidationError("Batch must contain at least 1 item")
         return value
 
 
@@ -115,11 +108,9 @@ class BatchAuthorizeRequestSerializer(serializers.Serializer):
 class AuthorizeResponseSerializer(serializers.Serializer):
     """Serializer for single authorization responses."""
 
-    decision = serializers.ChoiceField(choices=['ALLOW', 'DENY'])
+    decision = serializers.ChoiceField(choices=["ALLOW", "DENY"])
     reasons = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        default=list
+        child=serializers.CharField(), required=False, default=list
     )
 
 
@@ -127,14 +118,10 @@ class BatchItemResultSerializer(serializers.Serializer):
     """Serializer for individual results in batch authorization responses."""
 
     decision = serializers.ChoiceField(
-        choices=['ALLOW', 'DENY'],
-        required=False,
-        allow_null=True
+        choices=["ALLOW", "DENY"], required=False, allow_null=True
     )
     reasons = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        default=list
+        child=serializers.CharField(), required=False, default=list
     )
     error = serializers.DictField(required=False, allow_null=True)
 

@@ -26,7 +26,9 @@ from rest_framework.views import exception_handler as drf_exception_handler
 from .exceptions import AuthorizationError
 
 
-def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
+def custom_exception_handler(
+    exc: Exception, context: dict[str, Any]
+) -> Response | None:
     """
     Convert exceptions to standardized error responses.
 

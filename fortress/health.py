@@ -27,9 +27,9 @@ def readiness_check(request):
         "checks": {
             "database": "unknown",
             "cache": "unknown",
-        }
+        },
     }
-    
+
     # Check database connectivity
     try:
         connection.ensure_connection()
@@ -37,7 +37,7 @@ def readiness_check(request):
     except Exception as e:
         checks["checks"]["database"] = f"unhealthy: {str(e)}"
         checks["status"] = "not_ready"
-    
+
     # Check Redis/cache connectivity
     try:
         cache.set("health_check", "ok", timeout=10)
@@ -50,7 +50,7 @@ def readiness_check(request):
     except Exception as e:
         checks["checks"]["cache"] = f"unhealthy: {str(e)}"
         checks["status"] = "not_ready"
-    
+
     status_code = 200 if checks["status"] == "ready" else 503
     return JsonResponse(checks, status=status_code)
 

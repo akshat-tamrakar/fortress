@@ -35,12 +35,22 @@ dev = [
 [tool.uv]
 managed = true
 
+
+# --------------------
+# setuptools
+# --------------------
+[tool.setuptools.packages.find]
+include = ["apps*","fortress*"]
+
+
 # --------------------
 # Ruff (lint + format)
 # --------------------
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 
 [tool.ruff.format]

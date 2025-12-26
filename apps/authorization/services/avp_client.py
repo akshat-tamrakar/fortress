@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class AVPClient:
     """
     Client for Amazon Verified Permissions (AVP) operations.
-    
+
     Encapsulates all AVP SDK operations and provides a clean interface
     for authorization checks. Handles error translation from AVP-specific
     exceptions to application exceptions.
@@ -35,7 +35,7 @@ class AVPClient:
     def __init__(self, policy_store_id: str | None = None, region: str | None = None):
         """
         Initialize AVP client with boto3.
-        
+
         Args:
             policy_store_id: AVP policy store ID. Defaults to settings.AVP_POLICY_STORE_ID
             region: AWS region. Defaults to settings.AWS_REGION
@@ -56,16 +56,16 @@ class AVPClient:
     ) -> dict[str, Any]:
         """
         Check if a principal is authorized to perform an action on a resource.
-        
+
         Args:
             principal: Principal entity with id, type, and optional attributes
             action: Action string (e.g., 'User:read')
             resource: Resource entity with type, id, and optional attributes
             context: Optional context for the authorization decision
-            
+
         Returns:
             dict with 'decision' ('ALLOW' or 'DENY') and optional 'reasons'
-            
+
         Raises:
             AVPUnavailableError: When AVP service is unavailable
             AuthorizationValidationError: When request validation fails
@@ -95,7 +95,7 @@ class AVPClient:
 
             decision = response.get("decision", "DENY")
             determining_policies = response.get("determiningPolicies", [])
-            
+
             # Extract reasons from determining policies for DENY decisions
             reasons = []
             if decision == "DENY":
@@ -118,14 +118,16 @@ class AVPClient:
                 details={"error": str(e)},
             )
 
-    def _build_entity_reference(self, entity_type: str, entity_id: str) -> dict[str, Any]:
+    def _build_entity_reference(
+        self, entity_type: str, entity_id: str
+    ) -> dict[str, Any]:
         """
         Build Cedar entity reference for principals and resources.
-        
+
         Args:
             entity_type: Entity type (e.g., 'User', 'AdminUser')
             entity_id: Entity identifier (UUID string or 'self')
-            
+
         Returns:
             dict with entityType and entityId in Cedar format
         """
@@ -137,10 +139,10 @@ class AVPClient:
     def _build_action_reference(self, action: str) -> dict[str, Any]:
         """
         Build Cedar action reference.
-        
+
         Args:
             action: Action string (e.g., 'User:read', 'User:update')
-            
+
         Returns:
             dict with actionType and actionId in Cedar format
         """
@@ -156,18 +158,18 @@ class AVPClient:
     ) -> dict[str, Any] | None:
         """
         Build context for AVP evaluation.
-        
+
         Combines request context with principal attributes for ABAC evaluation.
-        
+
         Args:
             context: Request context (e.g., request source, timestamp)
             principal_attributes: Attributes of the principal making the request
-            
+
         Returns:
             dict with contextMap for AVP, or None if no context data
         """
         context_map = {**context}
-        
+
         if principal_attributes:
             context_map["principalAttributes"] = principal_attributes
 
@@ -179,12 +181,12 @@ class AVPClient:
     def _convert_to_avp_context(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Convert Python dict to AVP context format.
-        
+
         AVP expects context values in a specific format with type annotations.
-        
+
         Args:
             data: Python dictionary with context data
-            
+
         Returns:
             dict formatted for AVP contextMap
         """
@@ -219,13 +221,13 @@ class AVPClient:
     def _translate_error(self, error: ClientError) -> Exception:
         """
         Translate AVP ClientError to application exceptions.
-        
+
         Maps AWS SDK exceptions to domain-specific exceptions with
         appropriate error codes and HTTP status codes.
-        
+
         Args:
             error: boto3 ClientError from AVP operations
-            
+
         Returns:
             Application-specific exception
         """
@@ -235,7 +237,11 @@ class AVPClient:
         logger.error(f"AVP error - Code: {error_code}, Message: {error_message}")
 
         # Service unavailability errors
-        if error_code in ("ServiceException", "InternalServerException", "ServiceQuotaExceededException"):
+        if error_code in (
+            "ServiceException",
+            "InternalServerException",
+            "ServiceQuotaExceededException",
+        ):
             return AVPUnavailableError(
                 message="Authorization service temporarily unavailable",
                 details={"avp_error_code": error_code, "avp_message": error_message},

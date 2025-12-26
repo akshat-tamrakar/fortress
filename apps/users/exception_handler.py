@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 def custom_exception_handler(exc, context):
     """
     Custom exception handler that formats errors consistently.
-    
+
     Handles both UsersError exceptions and Django REST Framework exceptions,
     returning a standardized error response format.
-    
+
     Args:
         exc: The exception instance
         context: Dict with 'view' and 'request' keys
-        
+
     Returns:
         Response with standardized error format
     """

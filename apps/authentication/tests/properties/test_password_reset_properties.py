@@ -66,7 +66,10 @@ class TestPasswordResetPrivacyProperties:
 
         # Assert - Property: message does not reveal user existence
         # The message should be generic and not confirm the email exists
-        assert "password reset" in result["message"].lower() or "sent" in result["message"].lower()
+        assert (
+            "password reset" in result["message"].lower()
+            or "sent" in result["message"].lower()
+        )
 
     @settings(max_examples=100)
     @given(email=valid_email_strategy)
@@ -98,7 +101,10 @@ class TestPasswordResetPrivacyProperties:
         assert "message" in result, "Response must contain message"
 
         # Assert - Property: message does not reveal user non-existence
-        assert "password reset" in result["message"].lower() or "sent" in result["message"].lower()
+        assert (
+            "password reset" in result["message"].lower()
+            or "sent" in result["message"].lower()
+        )
 
     @settings(max_examples=100)
     @given(

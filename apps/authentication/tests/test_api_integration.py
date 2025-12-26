@@ -27,7 +27,7 @@ class TestRegisterAPI:
             "status": "UNCONFIRMED",
             "message": "User registered successfully",
         }
-        
+
         url = reverse("auth:register")
         data = {
             "email": "test@example.com",
@@ -76,7 +76,7 @@ class TestLoginAPI:
             "expires_in": 900,
             "token_type": "Bearer",
         }
-        
+
         url = reverse("auth:login")
         data = {
             "email": "test@example.com",
@@ -101,7 +101,7 @@ class TestLoginAPI:
             "challenge": "MFA_REQUIRED",
             "session_token": "session-token-123",
         }
-        
+
         url = reverse("auth:login")
         data = {
             "email": "test@example.com",
@@ -132,7 +132,7 @@ class TestVerifyEmailAPI:
             "status": "success",
             "message": "Email verified successfully",
         }
-        
+
         url = reverse("auth:verify-email")
         data = {
             "email": "test@example.com",
@@ -161,7 +161,7 @@ class TestPasswordResetAPI:
         mock_service.forgot_password.return_value = {
             "message": "Password reset code sent",
         }
-        
+
         url = reverse("auth:forgot-password")
         data = {"email": "test@example.com"}
 
@@ -181,7 +181,7 @@ class TestPasswordResetAPI:
         mock_service.reset_password.return_value = {
             "message": "Password reset successfully",
         }
-        
+
         url = reverse("auth:reset-password")
         data = {
             "email": "test@example.com",
@@ -203,7 +203,9 @@ class TestTokenRefreshAPI:
     """Integration tests for token refresh endpoint."""
 
     @patch("apps.authentication.views.get_auth_service")
-    def test_refresh_token_success(self, mock_get_service, api_client, valid_access_token):
+    def test_refresh_token_success(
+        self, mock_get_service, api_client, valid_access_token
+    ):
         """Test successful token refresh."""
         # Arrange
         mock_service = MagicMock()
@@ -214,7 +216,7 @@ class TestTokenRefreshAPI:
             "expires_in": 900,
             "token_type": "Bearer",
         }
-        
+
         url = reverse("auth:token-refresh")
         data = {"refresh_token": "refresh-token-123"}
 
@@ -233,18 +235,20 @@ class TestLogoutAPI:
 
     @patch("apps.authentication.backends.CognitoJWTAuthentication.authenticate")
     @patch("apps.authentication.views.get_auth_service")
-    def test_logout_success(self, mock_get_service, mock_authenticate, api_client, valid_access_token):
+    def test_logout_success(
+        self, mock_get_service, mock_authenticate, api_client, valid_access_token
+    ):
         """Test successful logout."""
         # Arrange
         mock_service = MagicMock()
         mock_get_service.return_value = mock_service
         mock_service.logout.return_value = None
-        
+
         # Mock authentication to return a user
         mock_user = MagicMock()
         mock_user.is_authenticated = True
         mock_authenticate.return_value = (mock_user, None)
-        
+
         url = reverse("auth:logout")
         api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {valid_access_token}")
 
@@ -273,7 +277,7 @@ class TestMFAVerifyAPI:
             "expires_in": 900,
             "token_type": "Bearer",
         }
-        
+
         url = reverse("auth:mfa-verify")
         data = {
             "session_token": "session-token-123",

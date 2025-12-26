@@ -26,7 +26,7 @@ class TestAuthorizeAPI:
         # Arrange
         mock_auth.return_value = (MagicMock(is_authenticated=True), None)
         mock_authz_service.authorize.return_value = {"decision": "ALLOW"}
-        
+
         url = reverse("authorization:authorize")
         data = {
             "principal": {"id": TEST_USER_ID, "type": "User"},
@@ -53,7 +53,7 @@ class TestAuthorizeAPI:
             "decision": "DENY",
             "reasons": ["Insufficient permissions"],
         }
-        
+
         url = reverse("authorization:authorize")
         data = {
             "principal": {"id": TEST_USER_ID, "type": "User"},
@@ -117,7 +117,7 @@ class TestBatchAuthorizeAPI:
                 {"decision": "DENY", "reasons": ["Insufficient permissions"]},
             ]
         }
-        
+
         url = reverse("authorization:batch-authorize")
         data = {
             "items": [
@@ -145,7 +145,9 @@ class TestBatchAuthorizeAPI:
 
     @patch("apps.authorization.views.authz_service")
     @patch("apps.authorization.authentication.IAMAuthentication.authenticate")
-    def test_batch_authorize_partial_failure(self, mock_auth, mock_authz_service, api_client):
+    def test_batch_authorize_partial_failure(
+        self, mock_auth, mock_authz_service, api_client
+    ):
         """Test batch authorization with partial failures."""
         # Arrange
         mock_auth.return_value = (MagicMock(is_authenticated=True), None)
@@ -155,7 +157,7 @@ class TestBatchAuthorizeAPI:
                 {"error": {"code": "VALIDATION_FAILED", "message": "Invalid request"}},
             ]
         }
-        
+
         url = reverse("authorization:batch-authorize")
         data = {
             "items": [

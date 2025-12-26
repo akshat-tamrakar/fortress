@@ -106,7 +106,9 @@ class VerifyEmailSerializer(serializers.Serializer):
     def validate_code(self, value: str) -> str:
         """Validate verification code is numeric."""
         if not value.isdigit():
-            raise serializers.ValidationError("Verification code must contain only digits")
+            raise serializers.ValidationError(
+                "Verification code must contain only digits"
+            )
         return value
 
 

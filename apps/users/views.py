@@ -46,7 +46,7 @@ class UserListCreateView(APIView):
     def get(self, request):
         """
         List all users with pagination.
-        
+
         Query Parameters:
             - limit: Maximum number of users to return (default: 60, max: 60)
             - next_token: Pagination token from previous response
@@ -94,7 +94,7 @@ class UserListCreateView(APIView):
     def post(self, request):
         """
         Create a new user (admin-initiated).
-        
+
         Request Body:
             - email: User's email address (required)
             - given_name: User's first name (required)
@@ -212,7 +212,7 @@ class UserDetailView(APIView):
     def put(self, request, user_id):
         """
         Update user attributes.
-        
+
         Request Body:
             - given_name: User's first name (optional)
             - family_name: User's last name (optional)
@@ -280,7 +280,7 @@ class UserDetailView(APIView):
     def delete(self, request, user_id):
         """
         Permanently delete a user.
-        
+
         ⚠️ WARNING: This is a hard delete. User data cannot be recovered.
         """
         try:
@@ -541,7 +541,7 @@ class MFASetupView(APIView):
     def post(self, request):
         """
         Setup TOTP MFA for current user.
-        
+
         Two-step process:
         1. Without totp_code: Returns secret_code for authenticator app
         2. With totp_code: Verifies and enables MFA

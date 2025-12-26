@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 class AuthorizeView(APIView):
     """
     POST /v1/authorize - Single authorization check.
-    
+
     Evaluates whether a principal can perform an action on a resource
     using Amazon Verified Permissions policies.
-    
+
     Request body:
         {
             "principal": {"id": "uuid", "type": "User", "attributes": {}},
@@ -43,13 +43,13 @@ class AuthorizeView(APIView):
             "resource": {"type": "User", "id": "uuid", "attributes": {}},
             "context": {}
         }
-    
+
     Response:
         {
             "decision": "ALLOW" | "DENY",
             "reasons": []  // Only present for DENY
         }
-    
+
     Requirements:
         - 1.1: Evaluate authorization requests against AVP policies
         - 1.2, 1.3: Return proper decision format
@@ -64,10 +64,10 @@ class AuthorizeView(APIView):
         # Validate request data
         serializer = AuthorizeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         # Perform authorization check
         result = authz_service.authorize(serializer.validated_data)
-        
+
         # Serialize and return response
         response_serializer = AuthorizeResponseSerializer(result)
         return Response(response_serializer.data)
@@ -76,10 +76,10 @@ class AuthorizeView(APIView):
 class BatchAuthorizeView(APIView):
     """
     POST /v1/authorize/batch - Batch authorization check.
-    
+
     Evaluates multiple authorization decisions in a single request.
     Results are returned in the same order as input items.
-    
+
     Request body:
         {
             "items": [
@@ -92,7 +92,7 @@ class BatchAuthorizeView(APIView):
                 ...
             ]
         }
-    
+
     Response:
         {
             "results": [
@@ -100,7 +100,7 @@ class BatchAuthorizeView(APIView):
                 {"error": {"code": "...", "message": "..."}}  // For failed items
             ]
         }
-    
+
     Requirements:
         - 2.1: Process batch authorization requests
         - 2.2: Support up to 30 items per batch
@@ -116,10 +116,10 @@ class BatchAuthorizeView(APIView):
         # Validate request data
         serializer = BatchAuthorizeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         # Perform batch authorization check
         result = authz_service.batch_authorize(serializer.validated_data)
-        
+
         # Serialize and return response
         response_serializer = BatchAuthorizeResponseSerializer(result)
         return Response(response_serializer.data)

@@ -27,7 +27,9 @@ from .exceptions import AuthenticationError
 from apps.authorization.exceptions import AuthorizationError
 
 
-def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
+def custom_exception_handler(
+    exc: Exception, context: dict[str, Any]
+) -> Response | None:
     """
     Convert exceptions to standardized error responses.
 

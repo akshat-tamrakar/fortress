@@ -17,15 +17,13 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+
 from apps.users.urls import me_urlpatterns
-from fortress.health import health_check, readiness_check, liveness_check
+from fortress.views import health_check
 
 urlpatterns = [
-    # Health check endpoints
-    path("health/", health_check, name="health_check"),
-    path("ready/", readiness_check, name="readiness_check"),
-    path("live/", liveness_check, name="liveness_check"),
-    # Admin
+    # Health check endpoint (no authentication required)
+    path("health", health_check, name="health"),
     path("admin/", admin.site.urls),
     # Django REST Framework authentication URLs (for browsable API)
     path("api-auth/", include("rest_framework.urls")),

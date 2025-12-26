@@ -403,7 +403,7 @@ For API responses, we abstract Cognito states:
 ```
 ┌────────────────────────┐         ┌─────────────────────────┐
 │ Order Service          │         │  User Management        │
-│ (ECS Task)             │────────▶│  Service (API Gateway)  │
+│ (ECS Task)             │────────▶│  Service (Django/Nginx) │
 │                        │         │                         │
 │ IAM Role:              │         │  IAM Auth:              │
 │ order-service-role     │         │  Verify IAM signature   │
@@ -436,12 +436,17 @@ For API responses, we abstract Cognito states:
 
 ## 9. Rate Limiting
 
-**Redis-based sliding window** with API Gateway throttling. Progressive lockout for authentication failures (3 failures = 30s lockout, escalating to 24 hours).
+**Nginx-based rate limiting** with progressive lockout for authentication failures (3 failures = 30s lockout, escalating to 24 hours).
 
 **Key limits:**
-- Authentication: 5 login attempts/min per IP
-- Authorization: 5000 checks/min per service
-- User management: 100 reads/min, 20 creates/min per user
+- Authentication: 20 requests/min per IP (5 req/min for password reset)
+- Authorization: 1000 checks/min per IP
+- User management: 100 requests/min per IP
+
+**Implementation:**
+- Nginx limit_req zones with burst capacity
+- Per-IP rate limiting enforced at reverse proxy layer
+- Connection limiting (10 concurrent connections per IP)
 
 **See:** [api-specifications.md](./api-specifications.md)
 
@@ -511,7 +516,7 @@ For API responses, we abstract Cognito states:
 | Authorization | Amazon Verified Permissions (ABAC) |
 | Transport Security | TLS 1.2+ |
 | Service-to-Service Auth | AWS IAM Roles |
-| Rate Limiting | Redis + API Gateway |
+| Rate Limiting | Nginx |
 | Input Validation | Schema validation on all inputs |
 | Password Storage | Cognito (bcrypt) |
 
@@ -574,7 +579,7 @@ JWT Valid + User Disabled → Deny (403 USER_DISABLED)
 | User Data Store | Amazon Cognito |
 | Authorization | Amazon Verified Permissions |
 | Cache | Amazon ElastiCache (Redis) |
-| API Gateway | Amazon API Gateway |
+| Reverse Proxy | Nginx |
 | Compute | AWS Lambda or Amazon ECS |
 | Monitoring | Amazon CloudWatch, AWS X-Ray |
 

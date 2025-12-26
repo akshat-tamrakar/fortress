@@ -20,8 +20,8 @@
                                          ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                   │
-│                         API Gateway (Amazon API Gateway)                         │
-│                        Rate Limiting • Request Validation                        │
+│                            Nginx Reverse Proxy                                   │
+│                   Rate Limiting • SSL/TLS • Security Headers                     │
 │                                                                                   │
 └───────────────────────────────────────┬───────────────────────────────────────────┘
                                         │
@@ -109,7 +109,337 @@
 
 ---
 
-## Component Interaction Diagram
+## Component Diagram
+
+### Service Boundaries & AWS Integrations
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          Fortress Service Boundary                               │
+│                                                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │                        API Layer (Django REST Framework)                  │  │
+│  │                                                                            │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │  │
+│  │  │ Authentication│  │Authorization │  │     Users    │  │   /me Self   │ │  │
+│  │  │    Module    │  │    Module    │  │   Module     │  │   Service    │ │  │
+│  │  │              │  │              │  │              │  │              │ │  │
+│  │  │ • Register   │  │ • Authorize  │  │ • List Users │  │ • Get Profile│ │  │
+│  │  │ • Login      │  │ • Batch      │  │ • Create     │  │ • Update Me  │ │  │
+│  │  │ • MFA        │  │ • Cache Mgmt │  │ • Update     │  │ • MFA Setup  │ │  │
+│  │  │ • Tokens     │  │              │  │ • Delete     │  │              │ │  │
+│  │  │ • Logout     │  │              │  │ • Enable     │  │              │ │  │
+│  │  │              │  │              │  │ • Disable    │  │              │ │  │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘ │  │
+│  └─────────┼──────────────────┼──────────────────┼──────────────────┼─────────┘  │
+│            │                  │                  │                  │            │
+│  ┌─────────▼──────────────────▼──────────────────▼──────────────────▼─────────┐  │
+│  │                            Middleware Layer                                 │  │
+│  │                                                                              │  │
+│  │  ┌──────────────────────────┐      ┌────────────────────────────────────┐  │  │
+│  │  │ UserStatusMiddleware     │      │ AuthorizationMiddleware            │  │  │
+│  │  │ ─────────────────────    │      │ ───────────────────────            │  │  │
+│  │  │ • Validate JWT tokens    │      │ • Check AVP permissions            │  │  │
+│  │  │ • Extract user context   │      │ • Cache authorization decisions    │  │  │
+│  │  │ • Check user enabled     │      │ • Enforce access control           │  │  │
+│  │  │ • Cache user status      │      │ • Fail-closed on errors            │  │  │
+│  │  └──────────────────────────┘      └────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│            │                  │                  │                  │            │
+│  ┌─────────▼──────────────────▼──────────────────▼──────────────────▼─────────┐  │
+│  │                          Service Layer (Business Logic)                     │  │
+│  │                                                                              │  │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐│  │
+│  │  │  AuthService    │  │  AuthzService   │  │     UserService             ││  │
+│  │  │  ────────────   │  │  ─────────────  │  │     ────────────            ││  │
+│  │  │ • register()    │  │ • authorize()   │  │ • create_user()             ││  │
+│  │  │ • login()       │  │ • batch_auth()  │  │ • get_user()                ││  │
+│  │  │ • verify_mfa()  │  │ • check_cache() │  │ • list_users()              ││  │
+│  │  │ • refresh()     │  │ • save_cache()  │  │ • update_user()             ││  │
+│  │  │ • logout()      │  │ • invalidate()  │  │ • delete_user()             ││  │
+│  │  │ • reset_pwd()   │  │                 │  │ • enable/disable_user()     ││  │
+│  │  └────────┬────────┘  └────────┬────────┘  └──────────┬──────────────────┘│  │
+│  └───────────┼─────────────────────┼───────────────────────┼────────────────────┘  │
+│              │                     │                       │                       │
+│  ┌───────────▼─────────────────────▼───────────────────────▼────────────────────┐  │
+│  │                        Client Integration Layer                              │  │
+│  │                                                                               │  │
+│  │  ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────────────┐│  │
+│  │  │ CognitoClient    │   │   AVPClient      │   │   CacheService           ││  │
+│  │  │ ──────────────   │   │   ──────────     │   │   ────────────           ││  │
+│  │  │ • sign_up()      │   │ • is_authorized()│   │ • get(key)               ││  │
+│  │  │ • initiate_auth()│   │ • batch_auth()   │   │ • set(key, val, ttl)     ││  │
+│  │  │ • verify_code()  │   │ • create_policy()│   │ • delete(key)            ││  │
+│  │  │ • mfa_setup()    │   │ • get_policy()   │   │ • scan_pattern(pattern)  ││  │
+│  │  │ • refresh_token()│   │ • put_entity()   │   │ • exists(key)            ││  │
+│  │  │ • global_signout│   │                  │   │ • ttl(key)               ││  │
+│  │  │ • admin_ops()    │   │                  │   │ • compress/decompress    ││  │
+│  │  └────────┬─────────┘   └────────┬─────────┘   └──────────┬───────────────┘│  │
+│  └───────────┼──────────────────────┼──────────────────────────┼────────────────┘  │
+│              │                      │                          │                   │
+└──────────────┼──────────────────────┼──────────────────────────┼───────────────────┘
+               │                      │                          │
+               │                      │                          │
+    ┌──────────▼──────────┐  ┌────────▼─────────┐   ┌───────────▼──────────┐
+    │                     │  │                  │   │                      │
+    │  AWS Cognito        │  │  Amazon Verified │   │  Amazon ElastiCache  │
+    │  User Pools         │  │  Permissions     │   │  (Redis)             │
+    │                     │  │                  │   │                      │
+    │ ┌─────────────────┐ │  │ ┌──────────────┐ │   │ ┌──────────────────┐ │
+    │ │ User Directory  │ │  │ │ Policy Store │ │   │ │ Authorization    │ │
+    │ │ • Authentication│ │  │ │ • Cedar      │ │   │ │ Cache            │ │
+    │ │ • MFA Storage   │ │  │ │   Policies   │ │   │ │ TTL: 60s         │ │
+    │ │ • Password Hash │ │  │ │ • ABAC Rules │ │   │ ├──────────────────┤ │
+    │ │ • User Attrs    │ │  │ │ • Entities   │ │   │ │ User Status      │ │
+    │ └─────────────────┘ │  │ │ • Contexts   │ │   │ │ Cache            │ │
+    │                     │  │ └──────────────┘ │   │ │ TTL: 30s         │ │
+    │ ┌─────────────────┐ │  │                  │   │ ├──────────────────┤ │
+    │ │ Token Service   │ │  │ ┌──────────────┐ │   │ │ JWKS Keys        │ │
+    │ │ • JWT Issuance  │ │  │ │ Evaluation   │ │   │ │ Cache            │ │
+    │ │ • Refresh       │ │  │ │ Engine       │ │   │ │ TTL: 24h         │ │
+    │ │ • Validation    │ │  │ │ • Real-time  │ │   │ └──────────────────┘ │
+    │ │ • Revocation    │ │  │ │ • <100ms     │ │   │                      │
+    │ └─────────────────┘ │  │ │ • Scalable   │ │   │ Connection Pool:     │
+    │                     │  │ └──────────────┘ │   │ • Max: 50            │
+    │ Regional Service    │  │ Regional Service │   │ • Cluster Mode       │
+    │ Multi-AZ Replicated │  │ Multi-AZ         │   │ • Multi-AZ           │
+    └─────────────────────┘  └──────────────────┘   └──────────────────────┘
+```
+
+### Service Integration Points
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      AWS Service Integration Details                      │
+└──────────────────────────────────────────────────────────────────────────┘
+
+Authentication Flow Integration:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Fortress ←→ AWS Cognito                                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Operations:                                                             │
+│ • sign_up()              → Creates user in Cognito User Pool           │
+│ • confirm_sign_up()      → Verifies email with confirmation code       │
+│ • initiate_auth()        → Authenticates user, returns JWT tokens      │
+│ • respond_to_auth()      → Handles MFA challenges (TOTP)               │
+│ • refresh_token()        → Issues new access/id tokens                 │
+│ • global_sign_out()      → Revokes all tokens for user                 │
+│ • admin_get_user()       → Retrieves user attributes                   │
+│ • admin_update_user()    → Updates user attributes                     │
+│ • admin_enable_user()    → Enables user account                        │
+│ • admin_disable_user()   → Disables user account                       │
+│                                                                         │
+│ Data Exchange:                                                          │
+│ → UserPoolId, ClientId, Username, Password                             │
+│ ← AccessToken, IdToken, RefreshToken, Session                          │
+│                                                                         │
+│ Error Handling:                                                         │
+│ • NotAuthorizedException → Invalid credentials                         │
+│ • UserNotFoundException  → User doesn't exist                          │
+│ • TooManyRequestsException → Rate limited                              │
+│ • CodeMismatchException → Invalid MFA/verification code                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Authorization Flow Integration:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Fortress ←→ Amazon Verified Permissions                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Operations:                                                             │
+│ • is_authorized()        → Evaluates single authorization request      │
+│ • batch_is_authorized()  → Evaluates multiple requests in batch        │
+│ • put_schema()           → Defines Cedar schema                        │
+│ • create_policy()        → Creates new Cedar policy                    │
+│ • get_policy()           → Retrieves policy details                    │
+│ • list_policies()        → Lists all policies                          │
+│                                                                         │
+│ Request Format:                                                         │
+│ → PolicyStoreId                                                         │
+│ → Principal: { entityType, entityId, attributes }                      │
+│ → Action: { actionType, actionId }                                     │
+│ → Resource: { entityType, entityId, attributes }                       │
+│ → Context: { additional_attributes }                                   │
+│                                                                         │
+│ Response:                                                               │
+│ ← Decision: ALLOW | DENY                                               │
+│ ← DeterminingPolicies: [policy_ids]                                    │
+│ ← Errors: [evaluation_errors]                                          │
+│                                                                         │
+│ Performance:                                                            │
+│ • Latency: <100ms (p99)                                                │
+│ • Cache: 60s TTL on decisions                                          │
+│ • Batch: Up to 30 requests per call                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Caching Integration:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Fortress ←→ Amazon ElastiCache (Redis)                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Operations:                                                             │
+│ • get(key)               → Retrieves cached value                      │
+│ • set(key, val, ttl)     → Stores value with expiration               │
+│ • delete(key)            → Removes cached value                        │
+│ • scan(pattern)          → Pattern-based key search                    │
+│ • exists(key)            → Checks key existence                        │
+│ • expire(key, ttl)       → Updates TTL                                 │
+│                                                                         │
+│ Key Patterns:                                                           │
+│ • authz:{principal}:{action}:{resource}  (60s TTL)                     │
+│ • user_status:{user_id}                  (30s TTL)                     │
+│ • jwks:{pool_id}                         (24h TTL)                     │
+│                                                                         │
+│ Data Format:                                                            │
+│ • Serialization: JSON with zlib compression                            │
+│ • Encoding: UTF-8                                                      │
+│                                                                         │
+│ Connection Management:                                                  │
+│ • Pool Size: 50 connections                                            │
+│ • Timeout: 5 seconds                                                   │
+│ • Retry: 3 attempts with exponential backoff                           │
+│ • Health Check: 30s interval                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Deployment Diagram
+
+### AWS Infrastructure Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              AWS Cloud (Region: us-east-1)                       │
+│                                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │                              Public Zone                                    │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                         Route 53 (DNS)                                │  │  │
+│  │  │  • Hosted Zone: fortress.example.com                                 │  │  │
+│  │  │  • Health Checks: Multi-region failover                              │  │  │
+│  │  │  • Routing Policy: Weighted/Latency-based                            │  │  │
+│  │  └───────────────────────────────┬──────────────────────────────────────┘  │  │
+│  │                                  │                                          │  │
+│  │                                  ▼                                          │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                  AWS WAF (Web Application Firewall)                  │  │  │
+│  │  │  • SQL Injection Protection                                          │  │  │
+│  │  │  • XSS Protection                                                    │  │  │
+│  │  │  • Rate Limiting Rules                                               │  │  │
+│  │  │  • IP Allowlist/Blocklist                                            │  │  │
+│  │  └───────────────────────────────┬──────────────────────────────────────┘  │  │
+│  │                                  │                                          │  │
+│  │                                  ▼                                          │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                Application Load Balancer (ALB)                       │  │  │
+│  │  │  • SSL/TLS Termination (ACM Certificate)                             │  │  │
+│  │  │  • TLS 1.2+ Only                                                     │  │  │
+│  │  │  • Multi-AZ Deployment (us-east-1a, us-east-1b, us-east-1c)         │  │  │
+│  │  │  • Health Checks: /health endpoint (30s interval)                    │  │  │
+│  │  │  • Connection Draining: 60s                                          │  │  │
+│  │  └───────────────────────────────┬──────────────────────────────────────┘  │  │
+│  └──────────────────────────────────┼─────────────────────────────────────────┘  │
+│                                     │                                            │
+│                                     ▼                                            │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │                       Nginx Reverse Proxy Layer                             │  │
+│  │                                                                             │  │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │  │
+│  │  │ Configuration: /etc/nginx/conf.d/fortress.conf                      │   │  │
+│  │  │ • Rate Limiting:                                                     │   │  │
+│  │  │   - /auth/*: 20 requests/min per IP                                 │   │  │
+│  │  │   - /forgot-password: 5 requests/min per IP                         │   │  │
+│  │  │   - /v1/*: 100 requests/min per IP                                  │   │  │
+│  │  │ • Security Headers: HSTS, CSP, X-Frame-Options, etc.               │   │  │
+│  │  │ • SSL/TLS: TLS 1.2+ with modern ciphers                             │   │  │
+│  │  │ • Connection Limiting: 10 connections per IP                        │   │  │
+│  │  │ • Static/Media File Serving                                         │   │  │
+│  │  └────────────────────────────────┬────────────────────────────────────┘   │  │
+│  └─────────────────────────────────────────────────────────────────────────────┘  │
+│                                     │                                            │
+│                                     ▼                                            │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │                              VPC (10.0.0.0/16)                              │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                    Public Subnets (10.0.1.0/24)                      │  │  │
+│  │  │  • NAT Gateway (Multi-AZ)                                            │  │  │
+│  │  │  • Internet Gateway                                                  │  │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │              Private Subnet - AZ A (10.0.10.0/24)                    │  │  │
+│  │  │                                                                       │  │  │
+│  │  │  ┌────────────────────────────────────────────────────────────────┐  │  │  │
+│  │  │  │     Compute Option 1: AWS Lambda                               │  │  │  │
+│  │  │  │                                                                 │  │  │  │
+│  │  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │  │  │  │
+│  │  │  │  │   Lambda     │  │   Lambda     │  │   Lambda     │        │  │  │  │
+│  │  │  │  │  Function    │  │  Function    │  │  Function    │        │  │  │  │
+│  │  │  │  │              │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Django App   │  │ Django App   │  │ Django App   │        │  │  │  │
+│  │  │  │  │ Runtime:     │  │ (Auto-scaled │  │ (Auto-scaled │        │  │  │  │
+│  │  │  │  │ Python 3.11  │  │  instances)  │  │  instances)  │        │  │  │  │
+│  │  │  │  │ Memory: 1024MB│ │              │  │              │        │  │  │  │
+│  │  │  │  │ Timeout: 30s │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Concurrency: │  │              │  │              │        │  │  │  │
+│  │  │  │  │   100        │  │              │  │              │        │  │  │  │
+│  │  │  │  └──────────────┘  └──────────────┘  └──────────────┘        │  │  │  │
+│  │  │  └────────────────────────────────────────────────────────────────┘  │  │  │
+│  │  │                                OR                                     │  │  │
+│  │  │  ┌────────────────────────────────────────────────────────────────┐  │  │  │
+│  │  │  │     Compute Option 2: Amazon ECS (Fargate)                     │  │  │  │
+│  │  │  │                                                                 │  │  │  │
+│  │  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │  │  │  │
+│  │  │  │  │  ECS Task    │  │  ECS Task    │  │  ECS Task    │        │  │  │  │
+│  │  │  │  │              │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Django App   │  │ Django App   │  │ Django App   │        │  │  │  │
+│  │  │  │  │ Container    │  │ Container    │  │ Container    │        │  │  │  │
+│  │  │  │  │              │  │              │  │              │        │  │  │  │
+│  │  │  │  │ CPU: 0.5 vCPU│  │ CPU: 0.5 vCPU│  │ CPU: 0.5 vCPU│        │  │  │  │
+│  │  │  │  │ Memory: 1GB  │  │ Memory: 1GB  │  │ Memory: 1GB  │        │  │  │  │
+│  │  │  │  │              │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Auto-scaling:│  │              │  │              │        │  │  │  │
+│  │  │  │  │ Min: 3       │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Max: 50      │  │              │  │              │        │  │  │  │
+│  │  │  │  │ Target: 70%  │  │              │  │              │        │  │  │  │
+│  │  │  │  │    CPU       │  │              │  │              │        │  │  │  │
+│  │  │  │  └──────────────┘  └──────────────┘  └──────────────┘        │  │  │  │
+│  │  │  └────────────────────────────────────────────────────────────────┘  │  │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │              Private Subnet - AZ B (10.0.20.0/24)                    │  │  │
+│  │  │              (Same compute deployment as AZ A)                        │  │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │              Private Subnet - AZ C (10.0.30.0/24)                    │  │  │
+│  │  │              (Same compute deployment as AZ A)                        │  │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │                  Security Groups & Network ACLs                       │  │  │
+│  │  │                                                                       │  │  │
+│  │  │  SG-ALB: Allow 443 from 0.0.0.0/0                                    │  │  │
+│  │  │  SG-Compute: Allow traffic from SG-ALB only                          │  │  │
+│  │  │  SG-Redis: Allow 6379 from SG-Compute                                │  │  │
+│  │  │  NACL: Stateless firewall rules                                      │  │  │
+│  │  └──────────────────────────────────────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │                          AWS Managed Services                               │  │
+│  │                                                                             │  │
+│  │  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐  │  │
+│  │  │   AWS Cognito        │  │  Amazon Verified     │  │ ElastiCache     │  │  │
+│  │  │   User Pools         │  │  Permissions (AVP)   │  │ (Redis)         │  │  │
+│  │  │                      │  │                      │  │                 │  │  │
+│  │  │ User Pool ID:        │  │ Policy Store:        │  │ Cluster:        │  │  │
+│  │  │   us-east-1_xxxxx    │  │   Cedar Policies     │  │   Multi-AZ      │  │  │
+│  │  │                      │  │                      │  │                 │  │  │
+│  │  │ MFA: TOTP Enabled    │  │ Entities:            │  │ Node Type:      │  │  │
+│  │  │ Password Policy:     │  │   Users, Resources   │  │   cache.t3.medium│ │  │
+│  │  │   Min 12 chars       │  │                      │  │
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -120,7 +450,7 @@ Client Request
       │
       ▼
 ┌──────────────────────────────────────┐
-│     API Gateway (Rate Limiting)      │  ← 5 req/min (auth), 100 req/min (users)
+│   Nginx Reverse Proxy (Port 443)    │  ← 20 req/min (auth), 100 req/min (users)
 └──────────────┬───────────────────────┘
                │
                ▼
@@ -409,15 +739,17 @@ when {
                             │   Balancer (ALB)         │
                             │   - SSL/TLS Termination  │
                             │   - Health Checks        │
+                            │   - Multi-AZ             │
                             └──────────┬───────────────┘
                                        │
                                        ▼
                          ┌──────────────────────────────┐
-                         │   Amazon API Gateway         │
+                         │   Nginx Reverse Proxy        │
                          │   - Rate Limiting            │
                          │   - Request Validation       │
-                         │   - API Keys                 │
-                         │   - CloudWatch Logs          │
+                         │   - SSL/TLS Re-encryption    │
+                         │   - Security Headers         │
+                         │   - Static File Serving      │
                          └──────────┬───────────────────┘
                                     │
             ┌───────────────────────┼───────────────────────┐
@@ -495,13 +827,13 @@ Layer 1: Network Security
 │  • No public internet access for app servers                   │
 └────────────────────────────────────────────────────────────────┘
 
-Layer 2: API Gateway Security
+Layer 2: Nginx Reverse Proxy Security
 ┌────────────────────────────────────────────────────────────────┐
-│  • TLS 1.2+ only                                               │
-│  • API Keys for service-to-service                             │
-│  • Request size limits (1MB)                                   │
-│  • Rate limiting per IP/API key                                │
-│  • CloudWatch logging (all requests)                           │
+│  • TLS 1.2+ only (modern cipher suites)                        │
+│  • Request size limits (10MB)                                  │
+│  • Rate limiting per IP (20-100 req/min)                       │
+│  • Connection limiting (10 per IP)                             │
+│  • Security headers (HSTS, CSP, X-Frame-Options, etc.)         │
 └────────────────────────────────────────────────────────────────┘
 
 Layer 3: Authentication
@@ -680,7 +1012,7 @@ fortress/
 │ User Store        │ AWS Cognito               │ Managed, secure │
 │ Authorization     │ Amazon VP (Cedar)         │ ABAC, scalable  │
 │ Cache             │ ElastiCache (Redis)       │ Low latency     │
-│ API Gateway       │ Amazon API Gateway        │ Rate limiting   │
+│ Reverse Proxy     │ Nginx                     │ Rate limiting, SSL │
 │ Compute           │ Lambda / ECS Fargate      │ Serverless/containers │
 │ Monitoring        │ CloudWatch + X-Ray        │ AWS native      │
 │ Code Quality      │ Ruff                      │ Fast linting    │

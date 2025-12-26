@@ -78,8 +78,37 @@ Fortress provides authentication, authorization, and user lifecycle management f
 - [uv](https://github.com/astral-sh/uv) package manager
 - AWS Account with Cognito and Verified Permissions configured
 - Redis (local or ElastiCache for production)
+- **Docker** (optional, for containerized deployment)
 
-### Installation
+### Quick Start with Docker 🐳 (Recommended)
+
+The fastest way to get started is using Docker:
+
+```bash
+# Clone and configure
+git clone https://github.com/akshat-tamrakar/fortress.git
+cd fortress
+cp .env.example .env
+# Edit .env with your AWS credentials
+
+# Start all services (web + redis)
+docker-compose up -d
+
+# Check health
+curl http://localhost:8000/health/
+
+# View logs
+docker-compose logs -f web
+```
+
+**Access:**
+- API: http://localhost:8000/v1/
+- Admin: http://localhost:8000/admin/ (admin/admin in dev)
+- Health: http://localhost:8000/health/
+
+See **[Docker Deployment Guide](docs/docker-deployment.md)** for complete instructions including production deployment, monitoring, and troubleshooting.
+
+### Manual Installation
 
 1. **Clone the repository**
 

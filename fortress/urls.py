@@ -17,9 +17,21 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from apps.users.urls import me_urlpatterns
+from fortress.health import health_check, readiness_check, liveness_check
 
 urlpatterns = [
+    # Health check endpoints
+    path("health/", health_check, name="health_check"),
+    path("ready/", readiness_check, name="readiness_check"),
+    path("live/", liveness_check, name="liveness_check"),
+    # Admin
     path("admin/", admin.site.urls),
     # Django REST Framework authentication URLs (for browsable API)
     path("api-auth/", include("rest_framework.urls")),
+    # API v1 endpoints
+    path("v1/auth/", include(("apps.authentication.urls", "authentication"), namespace="auth")),
+    path("v1/authorize/", include(("apps.authorization.urls", "authorization"), namespace="authorization")),
+    path("v1/users/", include("apps.users.urls")),
+    path("v1/me/", include(me_urlpatterns)),
 ]

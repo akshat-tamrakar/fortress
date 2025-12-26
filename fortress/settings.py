@@ -39,6 +39,10 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party apps
     "rest_framework",
+    # Local apps
+    "apps.authentication",
+    "apps.authorization",
+    "apps.users",
 ]
 
 MIDDLEWARE = [
@@ -49,6 +53,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Custom middleware for user status and authorization
+    "apps.authentication.middleware.UserStatusMiddleware",
+    "apps.authentication.middleware.AuthorizationMiddleware",
 ]
 
 ROOT_URLCONF = "fortress.urls"
@@ -128,6 +135,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ==============================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.authentication.backends.CognitoJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
     ],
@@ -150,7 +158,77 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
     ],
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.openapi.AutoSchema",
-    "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
+    "EXCEPTION_HANDLER": "apps.authentication.exception_handler.custom_exception_handler",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
     "DATETIME_FORMAT": "%Y-%m-%dT%H:%M:%S%z",
 }
+
+
+# ==============================
+# AWS Cognito Configuration
+# ==============================
+import os
+
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+# User pool for end users
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
+COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
+COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET", "")
+
+# Admin user pool (if different from user pool)
+COGNITO_ADMIN_USER_POOL_ID = os.environ.get("COGNITO_ADMIN_USER_POOL_ID", "")
+COGNITO_ADMIN_CLIENT_ID = os.environ.get("COGNITO_ADMIN_CLIENT_ID", "")
+
+
+# ==============================
+# Redis/Cache Configuration
+# ==============================
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": 50,
+                "retry_on_timeout": True,
+            },
+            "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+        },
+        "KEY_PREFIX": "fortress",
+        "TIMEOUT": 300,  # Default timeout 5 minutes
+    }
+}
+
+# Cache TTLs (in seconds)
+CACHE_TTL_USER_STATUS = 30  # User enabled/disabled status
+CACHE_TTL_AUTHORIZATION = 60  # Authorization decisions
+CACHE_TTL_JWKS = 86400  # JWT public keys (24 hours)
+
+
+# ==============================
+# Token Configuration
+# ==============================
+ACCESS_TOKEN_EXPIRY = int(os.environ.get("ACCESS_TOKEN_EXPIRY", 900))  # 15 minutes
+REFRESH_TOKEN_EXPIRY = int(os.environ.get("REFRESH_TOKEN_EXPIRY", 604800))  # 7 days
+
+
+# ==============================
+# Amazon Verified Permissions (AVP) Configuration
+# ==============================
+AVP_POLICY_STORE_ID = os.environ.get("AVP_POLICY_STORE_ID", "")
+
+# ==============================
+# Authorization Service Configuration
+# ==============================
+AUTHORIZATION_SERVICE_URL = os.environ.get("AUTHORIZATION_SERVICE_URL", "http://localhost:8000/v1/authorization")
+
+# ==============================
+# Redis Configuration for Authorization
+# ==============================
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
+REDIS_DB = int(os.environ.get("REDIS_DB", 0))

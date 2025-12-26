@@ -24,6 +24,7 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 from .exceptions import AuthenticationError
+from apps.authorization.exceptions import AuthorizationError
 
 
 def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
@@ -32,6 +33,7 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
 
     Handles:
     - AuthenticationError subclasses (our domain exceptions)
+    - AuthorizationError subclasses (authorization domain exceptions)
     - DRF validation errors
     - Other DRF exceptions
     """
@@ -39,6 +41,24 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
 
     # Handle our custom authentication exceptions
     if isinstance(exc, AuthenticationError):
+        return Response(
+            {
+                "error": {
+                    "code": exc.error_code,
+                    "message": str(exc),
+                    "details": exc.details,
+                    "request_id": request_id,
+                },
+                "retry": {
+                    "retryable": exc.retryable,
+                    "retry_after_seconds": exc.retry_after,
+                },
+            },
+            status=exc.status_code,
+        )
+
+    # Handle our custom authorization exceptions
+    if isinstance(exc, AuthorizationError):
         return Response(
             {
                 "error": {

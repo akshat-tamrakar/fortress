@@ -180,7 +180,7 @@ class UserDetailView(APIView):
             # - Users can view their own profile
             # For now, proceeding without authorization check
 
-            user = user_service.get_user(user_id)
+            user = user_service.get_user(str(user_id))
 
             serializer = UserResponseSerializer(user)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -237,7 +237,7 @@ class UserDetailView(APIView):
                     status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 )
 
-            user = user_service.update_user(user_id, **serializer.validated_data)
+            user = user_service.update_user(str(user_id), **serializer.validated_data)
 
             response_serializer = UserResponseSerializer(user)
             return Response(response_serializer.data, status=status.HTTP_200_OK)
@@ -287,7 +287,7 @@ class UserDetailView(APIView):
             # TODO: Add authorization check - only admins can delete users
             # For now, proceeding without authorization check
 
-            user_service.delete_user(user_id)
+            user_service.delete_user(str(user_id))
 
             return Response(
                 {"message": "User deleted successfully"},
@@ -330,7 +330,7 @@ class UserDisableView(APIView):
             # TODO: Add authorization check - only admins can disable users
             # For now, proceeding without authorization check
 
-            user = user_service.disable_user(user_id)
+            user = user_service.disable_user(str(user_id))
 
             serializer = UserResponseSerializer(user)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -371,7 +371,7 @@ class UserEnableView(APIView):
             # TODO: Add authorization check - only admins can enable users
             # For now, proceeding without authorization check
 
-            user = user_service.enable_user(user_id)
+            user = user_service.enable_user(str(user_id))
 
             serializer = UserResponseSerializer(user)
             return Response(serializer.data, status=status.HTTP_200_OK)

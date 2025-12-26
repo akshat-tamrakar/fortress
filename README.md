@@ -250,8 +250,9 @@ fortress/
 
 ## Documentation
 
-- **[API Specifications](docs/api-specifications.md)** - Complete REST API documentation with endpoints, rate limits, and error codes
 - **[POC Analysis](docs/user-management-service-poc.md)** - Architecture decisions, design philosophy, and technical specifications
+- **[API Specifications](docs/api-specifications.md)** - Complete REST API documentation with endpoints, rate limits, and error codes
+- **[Architecture Diagram](docs/architecture-diagram.md)** - Visual overview of the system architecture.
 
 ## User Types
 

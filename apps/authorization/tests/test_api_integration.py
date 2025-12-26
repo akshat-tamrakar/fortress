@@ -10,6 +10,10 @@ from rest_framework import status
 from unittest.mock import patch, MagicMock
 
 
+TEST_USER_ID = "123e4567-e89b-12d3-a456-426614174000"
+TEST_RESOURCE_ID = "987e6543-e21b-12d3-a456-426614174000"
+
+
 @pytest.mark.integration
 @pytest.mark.django_db
 class TestAuthorizeAPI:
@@ -25,9 +29,9 @@ class TestAuthorizeAPI:
         
         url = reverse("authorization:authorize")
         data = {
-            "principal": {"id": "user-123", "type": "User"},
+            "principal": {"id": TEST_USER_ID, "type": "User"},
             "action": "User:read",
-            "resource": {"type": "User", "id": "user-456"},
+            "resource": {"type": "User", "id": TEST_RESOURCE_ID},
             "context": {},
         }
 
@@ -52,9 +56,9 @@ class TestAuthorizeAPI:
         
         url = reverse("authorization:authorize")
         data = {
-            "principal": {"id": "user-123", "type": "User"},
+            "principal": {"id": TEST_USER_ID, "type": "User"},
             "action": "User:delete",
-            "resource": {"type": "User", "id": "user-456"},
+            "resource": {"type": "User", "id": TEST_RESOURCE_ID},
         }
 
         # Act
@@ -84,9 +88,9 @@ class TestAuthorizeAPI:
         # Arrange
         url = reverse("authorization:authorize")
         data = {
-            "principal": {"id": "user-123", "type": "User"},
+            "principal": {"id": TEST_USER_ID, "type": "User"},
             "action": "User:read",
-            "resource": {"type": "User", "id": "user-456"},
+            "resource": {"type": "User", "id": TEST_RESOURCE_ID},
         }
 
         # Act
@@ -118,14 +122,14 @@ class TestBatchAuthorizeAPI:
         data = {
             "items": [
                 {
-                    "principal": {"id": "user-123", "type": "User"},
+                    "principal": {"id": TEST_USER_ID, "type": "User"},
                     "action": "User:read",
-                    "resource": {"type": "User", "id": "user-456"},
+                    "resource": {"type": "User", "id": TEST_RESOURCE_ID},
                 },
                 {
-                    "principal": {"id": "user-123", "type": "User"},
+                    "principal": {"id": TEST_USER_ID, "type": "User"},
                     "action": "User:delete",
-                    "resource": {"type": "User", "id": "user-456"},
+                    "resource": {"type": "User", "id": TEST_RESOURCE_ID},
                 },
             ]
         }
@@ -156,14 +160,14 @@ class TestBatchAuthorizeAPI:
         data = {
             "items": [
                 {
-                    "principal": {"id": "user-123", "type": "User"},
+                    "principal": {"id": TEST_USER_ID, "type": "User"},
                     "action": "User:read",
-                    "resource": {"type": "User", "id": "user-456"},
+                    "resource": {"type": "User", "id": TEST_RESOURCE_ID},
                 },
                 {
-                    "principal": {"id": "user-123", "type": "User"},
-                    "action": "User:write",
-                    "resource": {"type": "User", "id": "user-456"},
+                    "principal": {"id": TEST_USER_ID, "type": "User"},
+                    "action": "User:read",  # Changed from invalid 'User:write'
+                    "resource": {"type": "User", "id": TEST_RESOURCE_ID},
                 },
             ]
         }
@@ -186,9 +190,9 @@ class TestBatchAuthorizeAPI:
         # Create 31 items (exceeds limit of 30)
         items = [
             {
-                "principal": {"id": f"user-{i}", "type": "User"},
+                "principal": {"id": TEST_USER_ID, "type": "User"},
                 "action": "User:read",
-                "resource": {"type": "User", "id": "user-456"},
+                "resource": {"type": "User", "id": TEST_RESOURCE_ID},
             }
             for i in range(31)
         ]

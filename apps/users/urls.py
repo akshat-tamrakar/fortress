@@ -17,6 +17,9 @@ urlpatterns = [
     path("<uuid:user_id>", UserDetailView.as_view(), name="user-detail"),
     path("<uuid:user_id>/disable", UserDisableView.as_view(), name="user-disable"),
     path("<uuid:user_id>/enable", UserEnableView.as_view(), name="user-enable"),
+    # Self-service endpoints accessible via users namespace
+    path("me", MeView.as_view(), name="me"),
+    path("me/mfa/setup", MFASetupView.as_view(), name="mfa-setup"),
 ]
 
 # Self-service endpoints (mounted at /v1/me/)
